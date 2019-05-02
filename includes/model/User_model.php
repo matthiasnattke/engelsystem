@@ -1,252 +1,294 @@
 <?php
 
+use Carbon\Carbon;
+use Engelsystem\Database\DB;
+use Engelsystem\Models\User\PasswordReset;
+use Engelsystem\Models\User\User;
+use Engelsystem\ValidationResult;
+
 /**
  * User model
  */
 
 /**
- * Update user.
+ * Returns the tshirt score (number of hours counted for tshirt).
+ * Accounts only ended shifts.
  *
- * @param User $user          
+ * @param int $userId
+ * @return int
  */
-function User_update($user) {
-  return sql_query("UPDATE `User` SET
-      `Nick`='" . sql_escape($user['Nick']) . "',
-      `Name`='" . sql_escape($user['Name']) . "',
-      `Vorname`='" . sql_escape($user['Vorname']) . "',
-      `Alter`='" . sql_escape($user['Alter']) . "',
-      `Telefon`='" . sql_escape($user['Telefon']) . "',
-      `DECT`='" . sql_escape($user['DECT']) . "',
-      `Handy`='" . sql_escape($user['Handy']) . "',
-      `email`='" . sql_escape($user['email']) . "',
-      `email_shiftinfo`=" . sql_bool($user['email_shiftinfo']) . ",
-      `jabber`='" . sql_escape($user['jabber']) . "',
-      `Size`='" . sql_escape($user['Size']) . "',
-      `Gekommen`='" . sql_escape($user['Gekommen']) . "',
-      `Aktiv`='" . sql_escape($user['Aktiv']) . "',
-      `force_active`=" . sql_bool($user['force_active']) . ",
-      `Tshirt`='" . sql_escape($user['Tshirt']) . "',
-      `color`='" . sql_escape($user['color']) . "',
-      `Sprache`='" . sql_escape($user['Sprache']) . "',
-      `Hometown`='" . sql_escape($user['Hometown']) . "',
-      `got_voucher`='" . sql_escape($user['got_voucher']) . "',
-      `arrival_date`='" . sql_escape($user['arrival_date']) . "',
-      `planned_arrival_date`='" . sql_escape($user['planned_arrival_date']) . "'
-      WHERE `UID`='" . sql_escape($user['UID']) . "'");
-}
+function User_tshirt_score($userId)
+{
+    $shift_sum_formula = User_get_shifts_sum_query();
+    $result_shifts = DB::selectOne(sprintf('
+        SELECT ROUND((%s) / 3600, 2) AS `tshirt_score`
+        FROM `users` LEFT JOIN `ShiftEntry` ON `users`.`id` = `ShiftEntry`.`UID`
+        LEFT JOIN `Shifts` ON `ShiftEntry`.`SID` = `Shifts`.`SID` 
+        WHERE `users`.`id` = ?
+        AND `Shifts`.`end` < ?
+        GROUP BY `users`.`id`
+    ', $shift_sum_formula), [
+        $userId,
+        time()
+    ]);
+    if (!isset($result_shifts['tshirt_score'])) {
+        $result_shifts = ['tshirt_score' => 0];
+    }
 
-/**
- * Counts all forced active users.
- */
-function User_force_active_count() {
-  return sql_select_single_cell("SELECT COUNT(*) FROM `User` WHERE `force_active` = 1");
-}
+    $result_worklog = DB::selectOne('
+        SELECT SUM(`work_hours`) AS `tshirt_score`
+        FROM `users` 
+        LEFT JOIN `UserWorkLog` ON `users`.`id` = `UserWorkLog`.`user_id`
+        WHERE `users`.`id` = ?
+        AND `UserWorkLog`.`work_timestamp` < ?
+    ', [
+        $userId,
+        time()
+    ]);
+    if (!isset($result_worklog['tshirt_score'])) {
+        $result_worklog = ['tshirt_score' => 0];
+    }
 
-function User_active_count() {
-  return sql_select_single_cell("SELECT COUNT(*) FROM `User` WHERE `Aktiv` = 1");
-}
-
-function User_got_voucher_count() {
-  return sql_select_single_cell("SELECT SUM(`got_voucher`) FROM `User`");
-}
-
-function User_arrived_count() {
-  return sql_select_single_cell("SELECT COUNT(*) FROM `User` WHERE `Gekommen` = 1");
-}
-
-function User_tshirts_count() {
-  return sql_select_single_cell("SELECT COUNT(*) FROM `User` WHERE `Tshirt` = 1");
-}
-
-/**
- * Returns all column names for sorting in an array.
- */
-function User_sortable_columns() {
-  return array(
-      'Nick',
-      'Name',
-      'Vorname',
-      'Alter',
-      'DECT',
-      'email',
-      'Size',
-      'Gekommen',
-      'Aktiv',
-      'force_active',
-      'Tshirt',
-      'lastLogIn' 
-  );
-}
-
-/**
- * Get all users, ordered by Nick by default or by given param.
- *
- * @param string $order_by          
- */
-function Users($order_by = 'Nick') {
-  return sql_select("SELECT * FROM `User` ORDER BY `" . sql_escape($order_by) . "` ASC");
+    return $result_shifts['tshirt_score'] + $result_worklog['tshirt_score'];
 }
 
 /**
  * Returns true if user is freeloader
  *
- * @param User $user          
+ * @param User $user
+ * @return bool
  */
-function User_is_freeloader($user) {
-  global $max_freeloadable_shifts, $user;
-  
-  return count(ShiftEntries_freeloaded_by_user($user)) >= $max_freeloadable_shifts;
+function User_is_freeloader($user)
+{
+    return count(ShiftEntries_freeloaded_by_user($user->id)) >= config('max_freeloadable_shifts');
 }
 
 /**
  * Returns all users that are not member of given angeltype.
  *
- * @param Angeltype $angeltype          
+ * @param array $angeltype Angeltype
+ * @return User[]
  */
-function Users_by_angeltype_inverted($angeltype) {
-  return sql_select("
-      SELECT `User`.*
-      FROM `User`
-      LEFT JOIN `UserAngelTypes` ON (`User`.`UID`=`UserAngelTypes`.`user_id` AND `angeltype_id`='" . sql_escape($angeltype['id']) . "')
-      WHERE `UserAngelTypes`.`id` IS NULL
-      ORDER BY `Nick`");
+function Users_by_angeltype_inverted($angeltype)
+{
+    return User::query()
+        ->select('users.*')
+        ->leftJoin('UserAngelTypes', function ($query) use ($angeltype) {
+            /** @var JoinClause $query */
+            $query
+                ->on('users.id', '=', 'UserAngelTypes.user_id')
+                ->where('UserAngelTypes.angeltype_id', '=', $angeltype['id']);
+        })
+        ->whereNull('UserAngelTypes.id')
+        ->orderBy('users.name')
+        ->get();
 }
 
 /**
  * Returns all members of given angeltype.
  *
- * @param Angeltype $angeltype          
+ * @param array $angeltype
+ * @return User[]
  */
-function Users_by_angeltype($angeltype) {
-  return sql_select("
-      SELECT
-      `User`.*,
-      `UserAngelTypes`.`id` as `user_angeltype_id`,
-      `UserAngelTypes`.`confirm_user_id`,
-      `UserAngelTypes`.`coordinator`
-      FROM `User`
-      JOIN `UserAngelTypes` ON `User`.`UID`=`UserAngelTypes`.`user_id`
-      WHERE `UserAngelTypes`.`angeltype_id`='" . sql_escape($angeltype['id']) . "'
-      ORDER BY `Nick`");
+function Users_by_angeltype($angeltype)
+{
+    return User::query()
+        ->select('users.*',
+            'UserAngelTypes.id AS user_angeltype_id',
+            'UserAngelTypes.confirm_user_id',
+            'UserAngelTypes.supporter',
+            'UserDriverLicenses.user_id AS wants_to_drive',
+            'UserDriverLicenses.*'
+        )
+        ->join('UserAngelTypes', 'users.id', '=', 'UserAngelTypes.user_id')
+        ->leftJoin('UserDriverLicenses', 'users.id', '=', 'UserDriverLicenses.user_id')
+        ->where('UserAngelTypes.angeltype_id', '=', $angeltype['id'])
+        ->orderBy('users.name')
+        ->get();
 }
 
 /**
- * Returns User id array
- */
-function User_ids() {
-  return sql_select("SELECT `UID` FROM `User`");
-}
-
-/**
- * Strip unwanted characters from a users nick.
+ * Strip unwanted characters from a users nick. Allowed are letters, numbers, connecting punctuation and simple space.
+ * Nick is trimmed.
  *
- * @param string $nick          
+ * @param string $nick
+ * @return ValidationResult
  */
-function User_validate_Nick($nick) {
-  return preg_replace("/([^a-z0-9üöäß. _+*-]{1,})/ui", '', $nick);
+function User_validate_Nick($nick)
+{
+    $nick = trim($nick);
+    
+    if(strlen($nick) == 0 || strlen($nick) > 23) {
+        return new ValidationResult(false, $nick);
+    }
+    if(preg_match('/([^\p{L}\p{N}\-_. ]+)/ui', $nick)) {
+        return new ValidationResult(false, $nick);
+    }
+    
+    return new ValidationResult(true, $nick);
 }
 
 /**
- * Returns user by id.
+ * Validate user email address.
  *
- * @param $id UID          
+ * @param string $mail The email address to validate
+ * @return ValidationResult
  */
-function User($id) {
-  $user_source = sql_select("SELECT * FROM `User` WHERE `UID`='" . sql_escape($id) . "' LIMIT 1");
-  if ($user_source === false)
-    return false;
-  if (count($user_source) > 0)
-    return $user_source[0];
-  return null;
+function User_validate_mail($mail)
+{
+    $mail = strip_item($mail);
+    return new ValidationResult(check_email($mail), $mail);
 }
 
 /**
- * TODO: Merge into normal user function
- * Returns user by id (limit informations.
+ * Validate the planned arrival date
  *
- * @param $id UID          
+ * @param int $planned_arrival_date Unix timestamp
+ * @return ValidationResult
  */
-function mUser_Limit($id) {
-  $user_source = sql_select("SELECT `UID`, `Nick`, `Name`, `Vorname`, `Telefon`, `DECT`, `Handy`, `email`, `jabber` FROM `User` WHERE `UID`='" . sql_escape($id) . "' LIMIT 1");
-  if ($user_source === false)
-    return false;
-  if (count($user_source) > 0)
-    return $user_source[0];
-  return null;
+function User_validate_planned_arrival_date($planned_arrival_date)
+{
+    if (is_null($planned_arrival_date)) {
+        // null is not okay
+        return new ValidationResult(false, time());
+    }
+
+    $config = config();
+    $buildup = $config->get('buildup_start');
+    $teardown = $config->get('teardown_end');
+
+    /** @var Carbon $buildup */
+    if (!empty($buildup) && $buildup->greaterThan(Carbon::createFromTimestamp($planned_arrival_date))) {
+        // Planned arrival can not be before buildup start date
+        return new ValidationResult(false, $buildup->getTimestamp());
+    }
+
+    /** @var Carbon $teardown */
+    if (!empty($teardown) && $teardown->lessThan(Carbon::createFromTimestamp($planned_arrival_date))) {
+        // Planned arrival can not be after teardown end date
+        return new ValidationResult(false, $teardown->getTimestamp());
+    }
+
+    return new ValidationResult(true, $planned_arrival_date);
 }
 
 /**
- * Returns User by api_key.
+ * Validate the planned departure date
  *
- * @param string $api_key
- *          User api key
- * @return Matching user, null or false on error
+ * @param int $planned_arrival_date   Unix timestamp
+ * @param int $planned_departure_date Unix timestamp
+ * @return ValidationResult
  */
-function User_by_api_key($api_key) {
-  $user = sql_select("SELECT * FROM `User` WHERE `api_key`='" . sql_escape($api_key) . "' LIMIT 1");
-  if ($user === false)
-    return false;
-  if (count($user) == 0)
-    return null;
-  return $user[0];
-}
+function User_validate_planned_departure_date($planned_arrival_date, $planned_departure_date)
+{
+    if (is_null($planned_departure_date)) {
+        // null is okay
+        return new ValidationResult(true, null);
+    }
 
-/**
- * Returns User by email.
- *
- * @param string $email          
- * @return Matching user, null or false on error
- */
-function User_by_email($email) {
-  $user = sql_select("SELECT * FROM `User` WHERE `email`='" . sql_escape($email) . "' LIMIT 1");
-  if ($user === false)
-    return false;
-  if (count($user) == 0)
-    return null;
-  return $user[0];
-}
+    if ($planned_arrival_date > $planned_departure_date) {
+        // departure cannot be before arrival
+        return new ValidationResult(false, $planned_arrival_date);
+    }
 
-/**
- * Returns User by password token.
- *
- * @param string $token          
- * @return Matching user, null or false on error
- */
-function User_by_password_recovery_token($token) {
-  $user = sql_select("SELECT * FROM `User` WHERE `password_recovery_token`='" . sql_escape($token) . "' LIMIT 1");
-  if ($user === false)
-    return false;
-  if (count($user) == 0)
-    return null;
-  return $user[0];
+    $config = config();
+    $buildup = $config->get('buildup_start');
+    $teardown = $config->get('teardown_end');
+
+    /** @var Carbon $buildup */
+    if (!empty($buildup) && $buildup->greaterThan(Carbon::createFromTimestamp($planned_departure_date))) {
+        // Planned arrival can not be before buildup start date
+        return new ValidationResult(false, $buildup->getTimestamp());
+    }
+
+    /** @var Carbon $teardown */
+    if (!empty($teardown) && $teardown->lessThan(Carbon::createFromTimestamp($planned_departure_date))) {
+        // Planned arrival can not be after teardown end date
+        return new ValidationResult(false, $teardown->getTimestamp());
+    }
+
+    return new ValidationResult(true, $planned_departure_date);
 }
 
 /**
  * Generates a new api key for given user.
  *
- * @param User $user          
+ * @param User $user
+ * @param bool $log
  */
-function User_reset_api_key(&$user, $log = true) {
-  $user['api_key'] = md5($user['Nick'] . time() . rand());
-  $result = sql_query("UPDATE `User` SET `api_key`='" . sql_escape($user['api_key']) . "' WHERE `UID`='" . sql_escape($user['UID']) . "' LIMIT 1");
-  if ($result === false)
-    return false;
-  if ($log)
-    engelsystem_log(sprintf("API key resetted (%s).", User_Nick_render($user)));
+function User_reset_api_key($user, $log = true)
+{
+    $user->api_key = md5($user->name . time() . rand());
+    $user->save();
+
+    if ($log) {
+        engelsystem_log(sprintf('API key resetted (%s).', User_Nick_render($user)));
+    }
 }
 
 /**
  * Generates a new password recovery token for given user.
  *
- * @param User $user          
+ * @param User $user
+ * @return string
  */
-function User_generate_password_recovery_token(&$user) {
-  $user['password_recovery_token'] = md5($user['Nick'] . time() . rand());
-  $result = sql_query("UPDATE `User` SET `password_recovery_token`='" . sql_escape($user['password_recovery_token']) . "' WHERE `UID`='" . sql_escape($user['UID']) . "' LIMIT 1");
-  if ($result === false)
-    return false;
-  engelsystem_log("Password recovery for " . User_Nick_render($user) . " started.");
-  return $user['password_recovery_token'];
+function User_generate_password_recovery_token($user)
+{
+    $reset = PasswordReset::findOrNew($user->id);
+    $reset->user_id = $user->id;
+    $reset->token = md5($user->name . time() . rand());
+    $reset->save();
+
+    engelsystem_log('Password recovery for ' . User_Nick_render($user) . ' started.');
+
+    return $reset->token;
 }
 
-?>
+/**
+ * @param User $user
+ * @return float
+ */
+function User_get_eligable_voucher_count($user)
+{
+    $voucher_settings = config('voucher_settings');
+    $shifts_done = count(ShiftEntries_finished_by_user($user->id));
+
+    $earned_vouchers = $user->state->got_voucher - $voucher_settings['initial_vouchers'];
+    $eligable_vouchers = $shifts_done / $voucher_settings['shifts_per_voucher'] - $earned_vouchers;
+    if ($eligable_vouchers < 0) {
+        return 0;
+    }
+
+    return $eligable_vouchers;
+}
+
+/**
+ * Generates the query to sum night shifts
+ *
+ * @return string
+ */
+function User_get_shifts_sum_query()
+{
+    $nightShifts = config('night_shifts');
+    if (!$nightShifts['enabled']) {
+        return 'COALESCE(SUM(`end` - `start`), 0)';
+    }
+
+    return sprintf('
+            COALESCE(SUM(
+                (1 +
+                    (
+                      (HOUR(FROM_UNIXTIME(`Shifts`.`end`)) > %1$d AND HOUR(FROM_UNIXTIME(`Shifts`.`end`)) < %2$d)
+                      OR (HOUR(FROM_UNIXTIME(`Shifts`.`start`)) > %1$d AND HOUR(FROM_UNIXTIME(`Shifts`.`start`)) < %2$d)
+                      OR (HOUR(FROM_UNIXTIME(`Shifts`.`start`)) <= %1$d AND HOUR(FROM_UNIXTIME(`Shifts`.`end`)) >= %2$d)
+                    )
+                )
+                * (`Shifts`.`end` - `Shifts`.`start`)
+                * (1 - (%3$d + 1) * `ShiftEntry`.`freeloaded`)
+            ), 0)
+        ',
+        $nightShifts['start'],
+        $nightShifts['end'],
+        $nightShifts['multiplier']
+    );
+}

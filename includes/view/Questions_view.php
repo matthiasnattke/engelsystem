@@ -1,37 +1,46 @@
 <?php
 
-function Questions_view($open_questions, $answered_questions, $ask_action) {
-  foreach ($open_questions as &$question) {
-    $question['actions'] = '<a href="' . page_link_to("user_questions") . '&action=delete&id=' . $question['QID'] . '">' . _("delete") . '</a>';
-    $question['Question'] = str_replace("\n", '<br />', $question['Question']);
-  }
-  
-  foreach ($answered_questions as &$question) {
-    $question['Question'] = str_replace("\n", '<br />', $question['Question']);
-    $question['Answer'] = str_replace("\n", '<br />', $question['Answer']);
-    $question['actions'] = '<a href="' . page_link_to("user_questions") . '&action=delete&id=' . $question['QID'] . '">' . _("delete") . '</a>';
-  }
-  
-  return page_with_title(questions_title(), array(
-      msg(),
-      '<h2>' . _("Open questions") . '</h2>',
-      table(array(
-          'Question' => _("Question"),
-          'actions' => "" 
-      ), $open_questions),
-      '<h2>' . _("Answered questions") . '</h2>',
-      table(array(
-          'Question' => _("Question"),
-          'answer_user' => _("Answered by"),
-          'Answer' => _("Answer"),
-          'actions' => "" 
-      ), $answered_questions),
-      '<h2>' . _("Ask an archangel") . '</h2>',
-      form(array(
-          form_textarea('question', _("Your Question:"), ""),
-          form_submit('submit', _("Save")) 
-      ), $ask_action) 
-  ));
-}
+/**
+ * @param array[] $open_questions
+ * @param array[] $answered_questions
+ * @param string  $ask_action
+ * @return string
+ */
+function Questions_view($open_questions, $answered_questions, $ask_action)
+{
+    foreach ($open_questions as &$question) {
+        $question['actions'] = form([
+            form_submit('submit', __('delete'), 'btn-default btn-xs')
+        ], page_link_to('user_questions', ['action' => 'delete', 'id' => $question['QID']]));
+        $question['Question'] = nl2br(htmlspecialchars($question['Question']));
+    }
 
-?>
+    foreach ($answered_questions as &$question) {
+        $question['Question'] = nl2br(htmlspecialchars($question['Question']));
+        $question['Answer'] = nl2br(htmlspecialchars($question['Answer']));
+        $question['actions'] = form([
+            form_submit('submit', __('delete'), 'btn-default btn-xs')
+        ], page_link_to('user_questions', ['action' => 'delete', 'id' => $question['QID']]));
+    }
+
+    return page_with_title(questions_title(), [
+        msg(),
+        heading(__('Open questions'), 2),
+        table([
+            'Question' => __('Question'),
+            'actions'  => ''
+        ], $open_questions),
+        heading(__('Answered questions'), 2),
+        table([
+            'Question'    => __('Question'),
+            'answer_user' => __('Answered by'),
+            'Answer'      => __('Answer'),
+            'actions'     => ''
+        ], $answered_questions),
+        heading(__('Ask the Heaven'), 2),
+        form([
+            form_textarea('question', __('Your Question:'), ''),
+            form_submit('submit', __('Save'))
+        ], $ask_action)
+    ]);
+}

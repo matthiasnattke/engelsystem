@@ -1,40 +1,25 @@
 <?php
 
+use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
+
 /**
  * Write a log entry.
  * This should be used to log user's activity.
  *
- * @param
- *          $message
+ * @param string $message
+ * @param string $level
  */
-function engelsystem_log($message) {
-  global $user;
-  
-  if (isset($user)) {
-    $nick = User_Nick_render($user);
-  } else {
+function engelsystem_log($message, $level = LogLevel::INFO)
+{
     $nick = "Guest";
-  }
-  LogEntry_create($nick, $message);
-}
+    /** @var LoggerInterface $logger */
+    $logger = app('logger');
+    $user = auth()->user();
 
-/**
- * Generates a PHP Stacktrace.
- */
-function debug_string_backtrace() {
-  ob_start();
-  debug_print_backtrace();
-  $trace = ob_get_contents();
-  ob_end_clean();
-  
-  // Remove first item from backtrace as it's this function which
-  // is redundant.
-  $trace = preg_replace('/^#0\s+' . __FUNCTION__ . "[^\n]*\n/", '', $trace, 1);
-  
-  // Renumber backtrace items.
-  $trace = preg_replace('/^#(\d+)/me', '\'#\' . ($1 - 1)', $trace);
-  
-  return $trace;
-}
+    if ($user) {
+        $nick = User_Nick_render($user);
+    }
 
-?>
+    $logger->log($level, '{nick}: {message}', ['nick' => $nick, 'message' => $message]);
+}

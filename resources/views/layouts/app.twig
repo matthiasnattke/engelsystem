@@ -1,0 +1,49 @@
+{% set theme = user.settings.theme|default(config('theme')) %}
+<!DOCTYPE html>
+<html lang="{{ session_get('locale')|split('_')[0]|escape('html_attr') }}">
+<head>
+    {% block head %}
+        <title>{% block title %}{{ title }}{% endblock %} - {{ config('app_name') }}</title>
+
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+
+        <link rel="stylesheet" type="text/css" href="{{ asset('assets/theme' ~ theme ~ '.css') }}"/>
+        <script type="text/javascript" src="{{ asset('assets/vendor.js') }}"></script>
+
+        {% if page() in ['news', 'user-meetings', '/'] and is_user() -%}
+            {% set parameters = {'key': user.api_key} -%}
+            {% if page() == 'user-meetings' -%}
+                {% set parameters = parameters|merge({'meetings': 1}) -%}
+            {% endif %}
+            <link href="{{ url('atom', parameters) }}" type="application/atom+xml" rel="alternate" title="Atom Feed">
+        {% endif %}
+
+    {% endblock %}
+</head>
+<body>
+
+{% block body %}
+    {% block header %}
+        {% include "layouts/parts/navbar.twig" %}
+    {% endblock %}
+
+    <div class="container-fluid">
+        <div class="row" id="content">
+            {% block content %}
+                {{ content|raw }}
+            {% endblock %}
+        </div>
+        <div class="row" id="footer">
+            {% block footer %}
+                {% include "layouts/parts/footer.twig" %}
+            {% endblock %}
+        </div>
+    </div>
+
+    {% block scripts %}{% endblock %}
+{% endblock %}
+
+</body>
+</html>

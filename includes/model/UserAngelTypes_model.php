@@ -1,172 +1,248 @@
 <?php
+
+use Engelsystem\Database\DB;
+use Engelsystem\Models\User\User;
+
 /**
  * User angeltypes model
  */
 
-function User_angeltypes($user) {
-  return sql_select("
-      SELECT `AngelTypes`.*, `UserAngelTypes`.`confirm_user_id`, `UserAngelTypes`.`coordinator`
+/**
+ * Checks if a user joined an angeltype.
+ *
+ * @param int   $userId    The user to be checked
+ * @param array $angeltype The angeltype to be checked
+ * @return boolean
+ */
+function UserAngelType_exists($userId, $angeltype)
+{
+    return count(DB::select('
+      SELECT `id`
+      FROM `UserAngelTypes`
+      WHERE `UserAngelTypes`.`user_id`=?
+      AND `angeltype_id`=?
+      ', [$userId, $angeltype['id']])) > 0;
+}
+
+/**
+ * List users angeltypes.
+ *
+ * @param int $userId
+ * @return array[]
+ */
+function User_angeltypes($userId)
+{
+    return DB::select('
+      SELECT `AngelTypes`.*, `UserAngelTypes`.`confirm_user_id`, `UserAngelTypes`.`supporter`
       FROM `UserAngelTypes`
       JOIN `AngelTypes` ON `UserAngelTypes`.`angeltype_id` = `AngelTypes`.`id`
-      WHERE `UserAngelTypes`.`user_id`='" . sql_escape($user['UID']) . "'
-      ");
+      WHERE `UserAngelTypes`.`user_id`=?
+      ', [$userId]);
 }
 
 /**
- * Gets unconfirmed user angeltypes for angeltypes of which the given user is a coordinator.
+ * Gets unconfirmed user angeltypes for angeltypes of which the given user is a supporter.
  *
- * @param User $user          
+ * @param int $userId
+ * @return array[]
  */
-function User_unconfirmed_AngelTypes($user) {
-  return sql_select("
-    SELECT 
-      `UserAngelTypes`.*, 
-      `AngelTypes`.`name`, 
-      count(`UnconfirmedMembers`.`user_id`) as `count` 
-    FROM `UserAngelTypes`
-    JOIN `AngelTypes` ON `UserAngelTypes`.`angeltype_id`=`AngelTypes`.`id`
-    JOIN `UserAngelTypes` as `UnconfirmedMembers` ON `UserAngelTypes`.`angeltype_id`=`UnconfirmedMembers`.`angeltype_id`
-    WHERE `UserAngelTypes`.`user_id`='" . sql_escape($user['UID']) . "'
-      AND `UserAngelTypes`.`coordinator`=TRUE
-      AND `AngelTypes`.`restricted`=TRUE
-      AND `UnconfirmedMembers`.`confirm_user_id` IS NULL
-    GROUP BY `UserAngelTypes`.`angeltype_id`
-    ORDER BY `AngelTypes`.`name`");
+function User_unconfirmed_AngelTypes($userId)
+{
+    return DB::select('
+        SELECT
+          `UserAngelTypes`.*,
+          `AngelTypes`.`name`,
+          count(`UnconfirmedMembers`.`user_id`) AS `count`
+        FROM `UserAngelTypes`
+        JOIN `AngelTypes` ON `UserAngelTypes`.`angeltype_id`=`AngelTypes`.`id`
+        JOIN `UserAngelTypes` AS `UnconfirmedMembers` ON `UserAngelTypes`.`angeltype_id`=`UnconfirmedMembers`.`angeltype_id`
+        WHERE `UserAngelTypes`.`user_id`=?
+          AND `UserAngelTypes`.`supporter`=TRUE
+          AND `AngelTypes`.`restricted`=TRUE
+          AND `UnconfirmedMembers`.`confirm_user_id` IS NULL
+        GROUP BY `UserAngelTypes`.`angeltype_id`, `UserAngelTypes`.`id`
+        ORDER BY `AngelTypes`.`name`
+    ', [$userId]);
 }
 
 /**
- * Returns true if user is angeltype coordinator or has privilege admin_user_angeltypes.
+ * Returns true if user is angeltype supporter or has privilege admin_user_angeltypes.
  *
- * @param User $user          
- * @param AngelType $angeltype          
+ * @param User  $user
+ * @param array $angeltype
+ * @return bool
  */
-function User_is_AngelType_coordinator($user, $angeltype) {
-  return (sql_num_query("
-      SELECT `id` 
-      FROM `UserAngelTypes` 
-      WHERE `user_id`='" . sql_escape($user['UID']) . "'
-      AND `angeltype_id`='" . sql_escape($angeltype['id']) . "'
-      AND `coordinator`=TRUE
-      LIMIT 1") > 0) || in_array('admin_user_angeltypes', privileges_for_user($user['UID']));
+function User_is_AngelType_supporter($user, $angeltype)
+{
+    $privileges = privileges_for_user($user->id);
+
+    return (count(DB::select('
+                      SELECT `id`
+                      FROM `UserAngelTypes`
+                      WHERE `user_id`=?
+                      AND `angeltype_id`=?
+                      AND `supporter`=TRUE
+                      LIMIT 1
+                ',
+                [
+                    $user->id,
+                    $angeltype['id']
+                ]
+            )) > 0)
+        || in_array('admin_user_angeltypes', $privileges);
 }
 
 /**
- * Add or remove coordinator rights.
+ * Add or remove supporter rights.
  *
- * @param int $user_angeltype_id          
- * @param bool $coordinator          
+ * @param int  $user_angeltype_id
+ * @param bool $supporter
  */
-function UserAngelType_update($user_angeltype_id, $coordinator) {
-  return sql_query("
+function UserAngelType_update($user_angeltype_id, $supporter)
+{
+    DB::update('
       UPDATE `UserAngelTypes`
-      SET `coordinator`=" . sql_bool($coordinator) . "
-      WHERE `id`='" . sql_escape($user_angeltype_id) . "'
-      LIMIT 1");
+      SET `supporter`=?
+      WHERE `id`=?
+      LIMIT 1
+    ', [(int)$supporter, $user_angeltype_id]);
 }
 
 /**
  * Delete all unconfirmed UserAngelTypes for given Angeltype.
  *
- * @param int $angeltype_id          
+ * @param int $angeltype_id
  */
-function UserAngelTypes_delete_all($angeltype_id) {
-  return sql_query("
+function UserAngelTypes_delete_all($angeltype_id)
+{
+    DB::delete('
       DELETE FROM `UserAngelTypes`
-      WHERE `angeltype_id`='" . sql_escape($angeltype_id) . "'
-      AND `confirm_user_id` IS NULL");
+      WHERE `angeltype_id`=?
+      AND `confirm_user_id` IS NULL
+    ', [$angeltype_id]);
 }
 
 /**
  * Confirm all unconfirmed UserAngelTypes for given Angeltype.
  *
- * @param int $angeltype_id          
- * @param User $confirm_user          
+ * @param int $angeltype_id
+ * @param int $confirm_user_id
  */
-function UserAngelTypes_confirm_all($angeltype_id, $confirm_user) {
-  return sql_query("
+function UserAngelTypes_confirm_all($angeltype_id, $confirm_user_id)
+{
+    DB::update('
       UPDATE `UserAngelTypes`
-      SET `confirm_user_id`='" . sql_escape($confirm_user['UID']) . "'
-      WHERE `angeltype_id`='" . sql_escape($angeltype_id) . "'
-      AND `confirm_user_id` IS NULL");
+      SET `confirm_user_id`=?
+      WHERE `angeltype_id`=?
+      AND `confirm_user_id` IS NULL
+    ', [$confirm_user_id, $angeltype_id]);
 }
 
 /**
  * Confirm an UserAngelType with confirming user.
  *
- * @param int $user_angeltype_id          
- * @param User $confirm_user          
+ * @param int $user_angeltype_id
+ * @param int $confirm_user_id
  */
-function UserAngelType_confirm($user_angeltype_id, $confirm_user) {
-  return sql_query("
+function UserAngelType_confirm($user_angeltype_id, $confirm_user_id)
+{
+    DB::update('
       UPDATE `UserAngelTypes`
-      SET `confirm_user_id`='" . sql_escape($confirm_user['UID']) . "'
-      WHERE `id`='" . sql_escape($user_angeltype_id) . "'
-      LIMIT 1");
+      SET `confirm_user_id`=?
+      WHERE `id`=?
+      LIMIT 1', [$confirm_user_id, $user_angeltype_id]);
 }
 
 /**
  * Delete an UserAngelType.
  *
- * @param UserAngelType $user_angeltype          
+ * @param array $user_angeltype
  */
-function UserAngelType_delete($user_angeltype) {
-  return sql_query("
-      DELETE FROM `UserAngelTypes` 
-      WHERE `id`='" . sql_escape($user_angeltype['id']) . "' 
-      LIMIT 1");
+function UserAngelType_delete($user_angeltype)
+{
+    DB::delete('
+      DELETE FROM `UserAngelTypes`
+      WHERE `id`=?
+      LIMIT 1', [$user_angeltype['id']]);
 }
 
 /**
  * Create an UserAngelType.
  *
- * @param User $user          
- * @param Angeltype $angeltype          
+ * @param int   $userId
+ * @param array $angeltype
+ * @return int
  */
-function UserAngelType_create($user, $angeltype) {
-  $result = sql_query("
-    INSERT INTO `UserAngelTypes` SET
-    `user_id`='" . sql_escape($user['UID']) . "',
-    `angeltype_id`='" . sql_escape($angeltype['id']) . "'");
-  if ($result === false)
-    return false;
-  return sql_id();
+function UserAngelType_create($userId, $angeltype)
+{
+    DB::insert('
+            INSERT INTO `UserAngelTypes` (`user_id`, `angeltype_id`, `supporter`)
+            VALUES (?, ?, FALSE)
+        ',
+        [
+            $userId,
+            $angeltype['id']
+        ]
+    );
+
+    return DB::getPdo()->lastInsertId();
 }
 
 /**
  * Get an UserAngelType by its id.
  *
- * @param int $user_angeltype_id          
+ * @param int $user_angeltype_id
+ * @return array|null
  */
-function UserAngelType($user_angeltype_id) {
-  $angeltype = sql_select("
+function UserAngelType($user_angeltype_id)
+{
+    $angelType = DB::selectOne('
       SELECT *
       FROM `UserAngelTypes`
-      WHERE `id`='" . sql_escape($user_angeltype_id) . "'
-      LIMIT 1");
-  if ($angeltype === false)
-    return false;
-  if (count($angeltype) == 0)
-    return null;
-  return $angeltype[0];
+      WHERE `id`=?
+      LIMIT 1', [$user_angeltype_id]);
+
+    return empty($angelType) ? null : $angelType;
 }
 
 /**
  * Get an UserAngelType by user and angeltype.
  *
- * @param User $user          
- * @param Angeltype $angeltype          
+ * @param int   $userId
+ * @param array $angeltype
+ * @return array|null
  */
-function UserAngelType_by_User_and_AngelType($user, $angeltype) {
-  $angeltype = sql_select("
-      SELECT * 
-      FROM `UserAngelTypes` 
-      WHERE `user_id`='" . sql_escape($user['UID']) . "'
-      AND `angeltype_id`='" . sql_escape($angeltype['id']) . "'
-      LIMIT 1");
-  if ($angeltype === false)
-    return false;
-  if (count($angeltype) == 0)
-    return null;
-  return $angeltype[0];
+function UserAngelType_by_User_and_AngelType($userId, $angeltype)
+{
+    $angelType = DB::selectOne('
+          SELECT *
+          FROM `UserAngelTypes`
+          WHERE `user_id`=?
+          AND `angeltype_id`=?
+          LIMIT 1
+        ',
+        [
+            $userId,
+            $angeltype['id']
+        ]
+    );
+
+    return empty($angelType) ? null : $angelType;
 }
-?>
+
+/**
+ * Get an UserAngelTypes by user
+ *
+ * @param int $userId
+ * @return array[]|null
+ */
+function UserAngelTypes_by_User($userId)
+{
+    return DB::select('
+          SELECT *
+          FROM `UserAngelTypes`
+          WHERE `user_id`=?
+        ',
+        [$userId]
+    );
+}

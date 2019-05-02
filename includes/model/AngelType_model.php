@@ -1,141 +1,238 @@
 <?php
 
+use Engelsystem\Database\DB;
+use Engelsystem\ValidationResult;
+
+/**
+ * Returns an array containing the basic attributes of angeltypes.
+ * FIXME! This is the big sign for needing entity objects
+ */
+function AngelType_new()
+{
+    return [
+        'id'                      => null,
+        'name'                    => '',
+        'restricted'              => false,
+        'no_self_signup'          => false,
+        'description'             => '',
+        'requires_driver_license' => false,
+        'contact_name'            => null,
+        'contact_dect'            => null,
+        'contact_email'           => null,
+        'show_on_dashboard'       => true
+    ];
+}
+
+/**
+ * Checks if the angeltype has any contact information.
+ *
+ * @param array $angeltype Angeltype
+ * @return bool
+ */
+function AngelType_has_contact_info($angeltype)
+{
+    return !empty($angeltype['contact_name'])
+        || !empty($angeltype['contact_dect'])
+        || !empty($angeltype['contact_email']);
+}
+
 /**
  * Delete an Angeltype.
- * 
- * @param Angeltype $angeltype          
+ *
+ * @param array $angeltype
  */
-function AngelType_delete($angeltype) {
-  return sql_query("
-      DELETE FROM `AngelTypes` 
-      WHERE `id`='" . sql_escape($angeltype['id']) . "' 
-      LIMIT 1");
+function AngelType_delete($angeltype)
+{
+    DB::delete('
+      DELETE FROM `AngelTypes`
+      WHERE `id`=?
+      LIMIT 1
+    ', [$angeltype['id']]);
+    engelsystem_log('Deleted angeltype: ' . AngelType_name_render($angeltype));
 }
 
 /**
  * Update Angeltype.
  *
- * @param int $angeltype_id          
- * @param string $name          
- * @param boolean $restricted          
- * @param string $description          
+ * @param array $angeltype The angeltype
  */
-function AngelType_update($angeltype_id, $name, $restricted, $description) {
-  return sql_query("
-      UPDATE `AngelTypes` SET 
-      `name`='" . sql_escape($name) . "', 
-      `restricted`='" . sql_escape($restricted ? 1 : 0) . "',
-      `description`='" . sql_escape($description) . "'
-      WHERE `id`='" . sql_escape($angeltype_id) . "' 
-      LIMIT 1");
+function AngelType_update($angeltype)
+{
+    DB::update('
+          UPDATE `AngelTypes` SET
+          `name` = ?,
+          `restricted` = ?,
+          `description` = ?,
+          `requires_driver_license` = ?,
+          `no_self_signup` = ?,
+          `contact_name` = ?,
+          `contact_dect` = ?,
+          `contact_email` = ?,
+          `show_on_dashboard` = ?
+          WHERE `id` = ?',
+        [
+            $angeltype['name'],
+            (int)$angeltype['restricted'],
+            $angeltype['description'],
+            (int)$angeltype['requires_driver_license'],
+            (int)$angeltype['no_self_signup'],
+            $angeltype['contact_name'],
+            $angeltype['contact_dect'],
+            $angeltype['contact_email'],
+            (int)$angeltype['show_on_dashboard'],
+            $angeltype['id'],
+        ]
+    );
+
+    engelsystem_log(
+        'Updated angeltype: ' . $angeltype['name'] . ($angeltype['restricted'] ? ', restricted' : '')
+        . ($angeltype['no_self_signup'] ? ', no_self_signup' : '')
+        . ($angeltype['requires_driver_license'] ? ', requires driver license' : '') . ', '
+        . $angeltype['contact_name'] . ', '
+        . $angeltype['contact_dect'] . ', '
+        . $angeltype['contact_email'] . ', '
+        . $angeltype['show_on_dashboard']
+    );
 }
 
 /**
  * Create an Angeltype.
  *
- * @param string $name          
- * @param boolean $restricted          
- * @param string $description          
- * @return New Angeltype id
+ * @param array $angeltype The angeltype
+ * @return array the created angeltype
  */
-function AngelType_create($name, $restricted, $description) {
-  $result = sql_query("
-      INSERT INTO `AngelTypes` SET 
-      `name`='" . sql_escape($name) . "', 
-      `restricted`='" . sql_escape($restricted ? 1 : 0) . "',
-      `description`='" . sql_escape($description) . "'");
-  if ($result === false)
-    return false;
-  return sql_id();
+function AngelType_create($angeltype)
+{
+    DB::insert('
+          INSERT INTO `AngelTypes` (
+              `name`,
+              `restricted`,
+              `description`,
+              `requires_driver_license`,
+              `no_self_signup`,
+              `contact_name`,
+              `contact_dect`,
+              `contact_email`,
+              `show_on_dashboard`
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ',
+        [
+            $angeltype['name'],
+            (int)$angeltype['restricted'],
+            $angeltype['description'],
+            (int)$angeltype['requires_driver_license'],
+            (int)$angeltype['no_self_signup'],
+            $angeltype['contact_name'],
+            $angeltype['contact_dect'],
+            $angeltype['contact_email'],
+            (int)$angeltype['show_on_dashboard']
+        ]
+    );
+
+    $angeltype['id'] = DB::getPdo()->lastInsertId();
+    engelsystem_log(
+        'Created angeltype: ' . $angeltype['name']
+        . ($angeltype['restricted'] ? ', restricted' : '')
+        . ($angeltype['requires_driver_license'] ? ', requires driver license' : '') . ', '
+        . $angeltype['contact_name'] . ', '
+        . $angeltype['contact_dect'] . ', '
+        . $angeltype['contact_email'] . ', '
+        . $angeltype['show_on_dashboard']
+    );
+
+    return $angeltype;
 }
 
 /**
  * Validates a name for angeltypes.
- * Returns array containing validation success and validated name.
+ * Returns ValidationResult containing validation success and validated name.
  *
- * @param string $name          
- * @param AngelType $angeltype          
+ * @param string $name      Wanted name for the angeltype
+ * @param array  $angeltype The angeltype the name is for
+ *
+ * @return ValidationResult result and validated name
  */
-function AngelType_validate_name($name, $angeltype) {
-  $name = strip_item($name);
-  if ($name == "")
-    return array(
-        false,
-        $name 
-    );
-  if (isset($angeltype) && isset($angeltype['id']))
-    return array(
-        sql_num_query("
-        SELECT * 
-        FROM `AngelTypes` 
-        WHERE `name`='" . sql_escape($name) . "' 
-        AND NOT `id`='" . sql_escape($angeltype['id']) . "'
-        LIMIT 1") == 0,
-        $name 
-    );
-  else
-    return array(
-        sql_num_query("
-        SELECT `id` 
-        FROM `AngelTypes` 
-        WHERE `name`='" . sql_escape($name) . "' 
-        LIMIT 1") == 0,
-        $name 
-    );
+function AngelType_validate_name($name, $angeltype)
+{
+    $name = strip_item($name);
+    if ($name == '') {
+        return new ValidationResult(false, '');
+    }
+    if (!empty($angeltype) && isset($angeltype['id'])) {
+        $valid = (count(DB::select('
+            SELECT `id`
+            FROM `AngelTypes`
+            WHERE `name`=?
+            AND NOT `id`=?
+            LIMIT 1
+        ', [$name, $angeltype['id']])) == 0);
+        return new ValidationResult($valid, $name);
+    }
+    $valid = (count(DB::select('
+        SELECT `id`
+        FROM `AngelTypes`
+        WHERE `name`=?
+        LIMIT 1', [$name])) == 0);
+
+    return new ValidationResult($valid, $name);
 }
 
 /**
  * Returns all angeltypes and subscription state to each of them for given user.
  *
- * @param User $user          
+ * @param int $userId
+ * @return array
  */
-function AngelTypes_with_user($user) {
-  return sql_select("
-      SELECT `AngelTypes`.*, 
-      `UserAngelTypes`.`id` as `user_angeltype_id`,
+function AngelTypes_with_user($userId)
+{
+    return DB::select('
+      SELECT `AngelTypes`.*,
+      `UserAngelTypes`.`id` AS `user_angeltype_id`,
       `UserAngelTypes`.`confirm_user_id`,
-      `UserAngelTypes`.`coordinator`
-      FROM `AngelTypes` 
-      LEFT JOIN `UserAngelTypes` ON `AngelTypes`.`id`=`UserAngelTypes`.`angeltype_id` 
-      AND `UserAngelTypes`.`user_id`=" . $user['UID'] . "
-      ORDER BY `name`");
+      `UserAngelTypes`.`supporter`
+      FROM `AngelTypes`
+      LEFT JOIN `UserAngelTypes` ON `AngelTypes`.`id`=`UserAngelTypes`.`angeltype_id`
+      AND `UserAngelTypes`.`user_id` = ?
+      ORDER BY `name`', [$userId]);
 }
 
 /**
  * Returns all angeltypes.
+ *
+ * @return array
  */
-function AngelTypes() {
-  return sql_select("
-      SELECT * 
-      FROM `AngelTypes` 
-      ORDER BY `name`");
+function AngelTypes()
+{
+    return DB::select('
+      SELECT *
+      FROM `AngelTypes`
+      ORDER BY `name`');
 }
 
 /**
  * Returns AngelType id array
+ *
+ * @return array
  */
-function AngelType_ids() {
-  $angelType_source = sql_select("SELECT `id` FROM `AngelTypes`");
-  if ($angelType_source === false)
-    return false;
-  if (count($angelType_source) > 0)
-    return $angelType_source;
-  return null;
+function AngelType_ids()
+{
+    $result = DB::select('SELECT `id` FROM `AngelTypes`');
+    return select_array($result, 'id', 'id');
 }
 
 /**
  * Returns angelType by id.
  *
- * @param $id angelType
- *          ID
+ * @param int $angeltype_id angelType ID
+ * @return array|null
  */
-function AngelType($id) {
-  $angelType_source = sql_select("SELECT * FROM `AngelTypes` WHERE `id`='" . sql_escape($id) . "' LIMIT 1");
-  if ($angelType_source === false)
-    return false;
-  if (count($angelType_source) > 0)
-    return $angelType_source[0];
-  return null;
-}
+function AngelType($angeltype_id)
+{
+    $angelType = DB::selectOne(
+        'SELECT * FROM `AngelTypes` WHERE `id`=?',
+        [$angeltype_id]
+    );
 
-?>
+    return empty($angelType) ? null : $angelType;
+}

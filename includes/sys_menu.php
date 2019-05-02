@@ -1,154 +1,191 @@
 <?php
 
-function page_link_to($page) {
-  if ($page == "")
-    return '?';
-  return '?p=' . $page;
-}
+use Engelsystem\UserHintsRenderer;
 
-function page_link_to_absolute($page) {
-  return (isset($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . preg_replace("/\?.*$/", '', $_SERVER['REQUEST_URI']) . page_link_to($page);
+/**
+ * @param string $page
+ * @param array  $parameters get parameters
+ * @return string
+ */
+function page_link_to($page = '', $parameters = [])
+{
+    $page = str_replace('_', '-', $page);
+    return url($page, $parameters);
 }
 
 /**
- * Renders the header toolbar containing search, login/logout, user and settings links.
+ * Render the user hints
+ *
+ * @return string
  */
-function header_toolbar() {
-  global $p, $privileges, $user, $enable_tshirt_size, $max_freeloadable_shifts;
-  
-  $toolbar_items = array();
-  
-  if (isset($user))
-    $toolbar_items[] = toolbar_item_link(page_link_to('shifts') . '&amp;action=next', 'time', User_shift_state_render($user));
-  
-  if (! isset($user) && in_array('register', $privileges))
-    $toolbar_items[] = toolbar_item_link(page_link_to('register'), 'plus', register_title(), $p == 'register');
-  
-  if (in_array('login', $privileges))
-    $toolbar_items[] = toolbar_item_link(page_link_to('login'), 'log-in', login_title(), $p == 'login');
-  
-  if (isset($user) && in_array('user_messages', $privileges))
-    $toolbar_items[] = toolbar_item_link(page_link_to('user_messages'), 'envelope', user_unread_messages());
-  
-  $hints = [];
-  if (isset($user)) {
-    $hint_class = 'info';
-    $glyphicon = 'info-sign';
-    // Erzengel Hinweis für unbeantwortete Fragen
-    if ($p != "admin_questions") {
-      $new_questions = admin_new_questions();
-      if ($new_questions != "")
-        $hints[] = $new_questions;
+function header_render_hints()
+{
+    $user = auth()->user();
+
+    $hints_renderer = new UserHintsRenderer();
+
+    if ($user) {
+        $hints_renderer->addHint(admin_new_questions());
+        $hints_renderer->addHint(user_angeltypes_unconfirmed_hint());
+        $hints_renderer->addHint(render_user_departure_date_hint());
+        $hints_renderer->addHint(user_driver_license_required_hint());
+
+        // Important hints:
+        $hints_renderer->addHint(render_user_freeloader_hint(), true);
+        $hints_renderer->addHint(render_user_arrived_hint(), true);
+        $hints_renderer->addHint(render_user_tshirt_hint(), true);
+        $hints_renderer->addHint(render_user_dect_hint(), true);
     }
-    
-    $unconfirmed_hint = user_angeltypes_unconfirmed_hint();
-    if ($unconfirmed_hint != '')
-      $hints[] = $unconfirmed_hint;
-    
-    if (! isset($user['planned_departure_date']) || $user['planned_departure_date'] == null)
-      $hints[] = info(_("Please enter your planned date of departure on your settings page to give us a feeling for teardown capacities."), true);
-    
-    if (User_is_freeloader($user)) {
-      $hints[] = error(sprintf(_("You freeloaded at least %s shifts. Shift signup is locked. Please go to heavens desk to be unlocked again."), $max_freeloadable_shifts), true);
-      $hint_class = 'danger';
-      $glyphicon = 'warning-sign';
-    }
-    
-    // Hinweis für Engel, die noch nicht angekommen sind
-    if ($user['Gekommen'] == 0) {
-      $hints[] = error(_("You are not marked as arrived. Please go to heaven's desk, get your angel badge and/or tell them that you arrived already."), true);
-      $hint_class = 'danger';
-      $glyphicon = 'warning-sign';
-    }
-    
-    if ($enable_tshirt_size && $user['Size'] == "") {
-      $hints[] = error(_("You need to specify a tshirt size in your settings!"), true);
-      $hint_class = 'danger';
-      $glyphicon = 'warning-sign';
-    }
-    
-    if ($user['DECT'] == "") {
-      $hints[] = error(_("You need to specify a DECT phone number in your settings! If you don't have a DECT phone, just enter \"-\"."), true);
-      $hint_class = 'danger';
-      $glyphicon = 'warning-sign';
-    }
-  }
-  if (count($hints) > 0)
-    $toolbar_items[] = toolbar_popover($glyphicon . ' text-' . $hint_class, '', $hints, 'bg-' . $hint_class);
-  
-  $user_submenu = make_langselect();
-  $user_submenu[] = toolbar_item_divider();
-  if (in_array('user_myshifts', $privileges))
-    $toolbar_items[] = toolbar_item_link(page_link_to('users') . '&amp;action=view', ' icon-icon_angel', $user['Nick'], $p == 'users');
-  
-  if (in_array('user_settings', $privileges))
-    $user_submenu[] = toolbar_item_link(page_link_to('user_settings'), 'list-alt', settings_title(), $p == 'user_settings');
-  
-  if (in_array('logout', $privileges))
-    $user_submenu[] = toolbar_item_link(page_link_to('logout'), 'log-out', logout_title(), $p == 'logout');
-  
-  if (count($user_submenu) > 0)
-    $toolbar_items[] = toolbar_dropdown('', '', $user_submenu);
-  
-  return toolbar($toolbar_items, true);
+
+    return $hints_renderer->render();
 }
 
-function make_navigation() {
-  global $p, $privileges;
-  
-  $menu = array();
-  $pages = array(
-      "news" => news_title(),
-      "user_meetings" => meetings_title(),
-      "user_shifts" => shifts_title(),
-      "angeltypes" => angeltypes_title(),
-      "user_questions" => questions_title() 
-  );
-  
-  foreach ($pages as $page => $title)
-    if (in_array($page, $privileges))
-      $menu[] = toolbar_item_link(page_link_to($page), '', $title, $page == $p);
-  
-  $admin_menu = array();
-  $admin_pages = array(
-      "admin_arrive" => admin_arrive_title(),
-      "admin_active" => admin_active_title(),
-      "admin_user" => admin_user_title(),
-      "admin_free" => admin_free_title(),
-      "admin_questions" => admin_questions_title(),
-      "shifttypes" => shifttypes_title(),
-      "admin_shifts" => admin_shifts_title(),
-      "admin_rooms" => admin_rooms_title(),
-      "admin_groups" => admin_groups_title(),
-      "admin_import" => admin_import_title(),
-      "admin_log" => admin_log_title() 
-  );
-  
-  foreach ($admin_pages as $page => $title)
-    if (in_array($page, $privileges))
-      $admin_menu[] = toolbar_item_link(page_link_to($page), '', $title, $page == $p);
-  
-  if (count($admin_menu) > 0)
-    $menu[] = toolbar_dropdown('', _("Admin"), $admin_menu);
-  
-  return toolbar($menu);
+/**
+ * @return array
+ */
+function make_user_submenu()
+{
+    global $page;
+
+    $user_submenu = make_language_select();
+
+    if (auth()->can('user_settings') || auth()->can('logout')) {
+        $user_submenu[] = toolbar_item_divider();
+    }
+
+    if (auth()->can('user_settings')) {
+        $user_submenu[] = toolbar_item_link(
+            page_link_to('user_settings'),
+            'list-alt',
+            __('Settings'),
+            $page == 'user_settings'
+        );
+    }
+
+    if (auth()->can('logout')) {
+        $user_submenu[] = toolbar_item_link(
+            page_link_to('logout'),
+            'log-out',
+            __('Logout'),
+            $page == 'logout'
+        );
+    }
+
+    return $user_submenu;
 }
 
-function make_navigation_for($name, $pages) {
-  global $privileges, $p;
-  
-  $menu = "";
-  foreach ($pages as $page)
-    if (in_array($page, $privileges))
-      $menu .= '<li' . ($page == $p ? ' class="selected"' : '') . '><a href="' . page_link_to($page) . '">' . $title . '</a></li>';
-  
-  if ($menu != "")
-    $menu = '<nav class="container"><h4>' . $name . '</h4><ul class="content">' . $menu . '</ul></nav>';
-  return $menu;
+/**
+ * @return string
+ */
+function make_navigation()
+{
+    global $page;
+
+    $menu = [];
+    $pages = [
+        'news'           => __('News'),
+        'user_meetings'  => __('Meetings'),
+        'user_shifts'    => __('Shifts'),
+        'angeltypes'     => __('Angeltypes'),
+        'user_questions' => __('Ask the Heaven'),
+    ];
+
+    foreach ($pages as $menu_page => $title) {
+        if (auth()->can($menu_page)) {
+            $menu[] = toolbar_item_link(page_link_to($menu_page), '', $title, $menu_page == $page);
+        }
+    }
+
+    $menu = make_room_navigation($menu);
+
+    $admin_menu = [];
+    $admin_pages = [
+        'admin_arrive'       => __('Arrived angels'),
+        'admin_active'       => __('Active angels'),
+        'admin_user'         => __('All Angels'),
+        'admin_free'         => __('Free angels'),
+        'admin_questions'    => __('Answer questions'),
+        'shifttypes'         => __('Shifttypes'),
+        'admin_shifts'       => __('Create shifts'),
+        'admin_rooms'        => __('Rooms'),
+        'admin_groups'       => __('Grouprights'),
+        'admin_import'       => __('Frab import'),
+        'admin_log'          => __('Log'),
+        'admin_event_config' => __('Event config'),
+    ];
+
+    if (config('autoarrive')) {
+        unset($admin_pages['admin_arrive']);
+    }
+
+    foreach ($admin_pages as $menu_page => $title) {
+        if (auth()->can($menu_page)) {
+            $admin_menu[] = toolbar_item_link(
+                page_link_to($menu_page),
+                '',
+                $title,
+                $menu_page == $page
+            );
+        }
+    }
+
+    if (count($admin_menu) > 0) {
+        $menu[] = toolbar_dropdown('', __('Admin'), $admin_menu);
+    }
+
+    return '<ul class="nav navbar-nav">' . join("\n", $menu) . '</ul>';
 }
 
-function make_menu() {
-  return make_navigation();
+/**
+ * Adds room navigation to the given menu.
+ *
+ * @param string[] $menu Rendered menu
+ * @return string[]
+ */
+function make_room_navigation($menu)
+{
+    if (!auth()->can('view_rooms')) {
+        return $menu;
+    }
+
+    // Get a list of all rooms
+    $rooms = Rooms();
+    $room_menu = [];
+    if (auth()->can('admin_rooms')) {
+        $room_menu[] = toolbar_item_link(page_link_to('admin_rooms'), 'list', __('Manage rooms'));
+    }
+    if (count($room_menu) > 0) {
+        $room_menu[] = toolbar_item_divider();
+    }
+    foreach ($rooms as $room) {
+        $room_menu[] = toolbar_item_link(room_link($room), 'map-marker', $room['Name']);
+    }
+    if (count($room_menu) > 0) {
+        $menu[] = toolbar_dropdown('map-marker', __('Rooms'), $room_menu);
+    }
+    return $menu;
 }
 
-?>
+/**
+ * Renders language selection.
+ *
+ * @return array
+ */
+function make_language_select()
+{
+    $request = app('request');
+    $activeLocale = session()->get('locale');
+
+    $items = [];
+    foreach (config('locales') as $locale => $name) {
+        $url = url($request->getPathInfo(), ['set-locale' => $locale]);
+
+        $items[] = toolbar_item_link(
+            htmlspecialchars($url),
+            '',
+            $name,
+            $locale == $activeLocale
+        );
+    }
+    return $items;
+}

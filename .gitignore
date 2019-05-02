@@ -1,8 +1,36 @@
+# Generic cache files
+*~
+.~*
+*.tmp
+*.temp
+*.lock
+*.DS_Store
+.*.swp
+*.out
+*.cache
+Thumbs.db
 .project
 .buildpath
 .settings
-.*.swp
 _vimrc_local.vim
 .sass-cache
-config/config.php
-test/coverage
+
+# PHPstorm files
+/.idea/
+/.phpstorm.meta.php
+
+# Project files
+/config/config.php
+/test/coverage
+/public/coverage
+/coverage
+/unittests.xml
+
+# Composer files
+/vendor/
+/composer.lock
+
+# Frontend files
+/node_modules
+/public/assets
+/package-lock.json

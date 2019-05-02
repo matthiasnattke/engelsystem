@@ -1,54 +1,66 @@
 <?php
 
+/**
+ * Controller for ical output of users own shifts or any user_shifts filter.
+ */
+function user_ical()
+{
+    $request = request();
 
-// Öffentlich zugängliche Funktion zum Abrufen von iCal-Exports der eigenen Schichten
-function user_ical() {
-  global $ical_shifts, $user;
+    if (!$request->has('key') || !preg_match('/^[\da-f]{32}$/', $request->input('key'))) {
+        engelsystem_error('Missing key.');
+    }
 
-  if (isset ($_REQUEST['key']) && preg_match("/^[0-9a-f]{32}$/", $_REQUEST['key']))
-    $key = $_REQUEST['key'];
-  else
-    die("Missing key.");
+    $user = auth()->apiUser('key');
+    if (!$user) {
+        engelsystem_error('Key invalid.');
+    }
+    if (!auth()->can('ical')) {
+        engelsystem_error('No privilege for ical.');
+    }
 
-  $user = User_by_api_key($key);
-  if($user === false)
-    die("Unable to find user.");
-  if($user == null)
-    die("Key invalid.");
-  if(!in_array('ical', privileges_for_user($user['UID'])))
-    die("No privilege for ical.");
+    $ical_shifts = load_ical_shifts();
 
-  if (isset ($_REQUEST['export']) && $_REQUEST['export'] == 'user_shifts') {
-    require_once realpath(__DIR__ . '/user_shifts.php');
-    view_user_shifts();
-  } else {
-    $ical_shifts = sql_select("
-        SELECT `ShiftTypes`.`name`, `Shifts`.*, `Room`.`Name` as `room_name`
-        FROM `ShiftEntry`
-        INNER JOIN `Shifts` ON (`ShiftEntry`.`SID` = `Shifts`.`SID`)
-        JOIN `ShiftTypes` ON (`ShiftTypes`.`id` = `Shifts`.`shifttype_id`)
-        INNER JOIN `Room` ON (`Shifts`.`RID` = `Room`.`RID`)
-        WHERE `UID`='" . sql_escape($user['UID']) . "'
-        ORDER BY `start`");
-  }
-
-  header("Content-Type: text/calendar; charset=utf-8");
-  $html = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//-//Engelsystem//DE\r\nCALSCALE:GREGORIAN\r\n";
-  foreach ($ical_shifts as $shift) {
-    $html .= "BEGIN:VEVENT\r\n";
-    $html .= "UID:" . md5($shift['start'] . $shift['end'] . $shift['name']) . "\r\n";
-    $html .= "SUMMARY:" . str_replace("\n", "\\n", $shift['name']) . " (" . str_replace("\n", "\\n", $shift['title']) . ")\r\n";
-    if(isset($shift['Comment']))
-      $html .= "DESCRIPTION:" . str_replace("\n", "\\n", $shift['Comment']) . "\r\n";
-    $html .= "DTSTART;TZID=Europe/Berlin:" . date("Ymd\THis", $shift['start']) . "\r\n";
-    $html .= "DTEND;TZID=Europe/Berlin:" . date("Ymd\THis", $shift['end']) . "\r\n";
-    $html .= "LOCATION:" . $shift['room_name'] . "\r\n";
-    $html .= "END:VEVENT\r\n";
-  }
-  $html .= "END:VCALENDAR\r\n";
-  $html = trim($html, "\x0A");
-  header("Content-Length: " . strlen($html));
-  echo $html;
-  die();
+    send_ical_from_shifts($ical_shifts);
 }
-?>
+
+/**
+ * Renders an ical calendar from given shifts array.
+ *
+ * @param array $shifts Shift
+ */
+function send_ical_from_shifts($shifts)
+{
+    header('Content-Type: text/calendar; charset=utf-8');
+    header('Content-Disposition: attachment; filename=shifts.ics');
+    $output = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//-//" . config('app_name') . "//DE\r\nCALSCALE:GREGORIAN\r\n";
+    foreach ($shifts as $shift) {
+        $output .= make_ical_entry_from_shift($shift);
+    }
+    $output .= "END:VCALENDAR\r\n";
+    $output = trim($output, "\x0A");
+    header('Content-Length: ' . strlen($output));
+    raw_output($output);
+}
+
+/**
+ * Renders an ical vevent from given shift.
+ *
+ * @param array $shift
+ * @return string
+ */
+function make_ical_entry_from_shift($shift)
+{
+    $output = "BEGIN:VEVENT\r\n";
+    $output .= 'UID:' . md5($shift['start'] . $shift['end'] . $shift['name']) . "\r\n";
+    $output .= 'SUMMARY:' . str_replace("\n", "\\n", $shift['name'])
+        . ' (' . str_replace("\n", "\\n", $shift['title']) . ")\r\n";
+    if (isset($shift['Comment'])) {
+        $output .= 'DESCRIPTION:' . str_replace("\n", "\\n", $shift['Comment']) . "\r\n";
+    }
+    $output .= 'DTSTART;TZID=Europe/Berlin:' . date("Ymd\THis", $shift['start']) . "\r\n";
+    $output .= 'DTEND;TZID=Europe/Berlin:' . date("Ymd\THis", $shift['end']) . "\r\n";
+    $output .= 'LOCATION:' . $shift['Name'] . "\r\n";
+    $output .= "END:VEVENT\r\n";
+    return $output;
+}

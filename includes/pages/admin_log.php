@@ -1,35 +1,44 @@
 <?php
-function admin_log_title() {
-  return _("Log");
+
+use Engelsystem\Models\LogEntry;
+
+/**
+ * @return string
+ */
+function admin_log_title()
+{
+    return __('Log');
 }
 
-function admin_log() {
+/**
+ * @return string
+ */
+function admin_log()
+{
+    $filter = '';
+    if (request()->has('keyword')) {
+        $filter = strip_request_item('keyword');
+    }
 
-  if (isset($_POST['keyword'])) {
-    $filter = $_POST['keyword'];
-    $log_entries_source = LogEntries_filter($_POST['keyword']);
-  } else {
-    $filter = "";
-    $log_entries_source = LogEntries();
-  }
+    $log_entries = LogEntry::filter($filter);
 
-  $log_entries = array();
-  foreach ($log_entries_source as $log_entry) {
-    $log_entry['date'] = date("d.m.Y H:i", $log_entry['timestamp']);
-    $log_entries[] = $log_entry;
-  }
+    $entries = [];
+    foreach ($log_entries as $entry) {
+        $data = $entry->toArray();
+        $data['created_at'] = date_format($entry->created_at, 'd.m.Y H:i');
+        $entries[] = $data;
+    }
 
-  return page_with_title(admin_log_title(), array(
-      msg(),
-      form(array(
-        form_text('keyword', _("Search"), $filter),
-        form_submit(_("Search"), "Go")
-      )),
-      table(array(
-          'date' => "Time",
-          'nick' => "Angel",
-          'message' => "Log Entry"
-      ), $log_entries)
-  ));
+    return page_with_title(admin_log_title(), [
+        msg(),
+        form([
+            form_text('keyword', __('Search'), $filter),
+            form_submit(__('Search'), 'Go')
+        ]),
+        table([
+            'created_at' => 'Time',
+            'level'      => 'Type',
+            'message'    => 'Log Entry'
+        ], $entries)
+    ]);
 }
-?>

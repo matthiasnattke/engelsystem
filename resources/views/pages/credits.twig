@@ -1,0 +1,32 @@
+{% extends "layouts/app.twig" %}
+
+{% block title %}{{ __('Credits') }}{% endblock %}
+
+{% block content %}
+    <div class="container">
+        <h1>Credits</h1>
+        <div class="row">
+            {% for title, credit in credits %}
+                <div class="col-md-4">
+                    <h2>{{ title }}</h2>
+                    {{ credit|markdown }}
+                </div>
+            {% endfor %}
+
+            <div class="col-md-4">
+                <h2>Source code</h2>
+                <p>
+                    The original engelsystem was written by
+                    <a href="https://github.com/cookieBerlin/engelsystem">cookie</a>.
+                    It was then completely rewritten and enhanced by
+                    <a href="https://notrademark.de">msquare</a> (maintainer) and
+                    <a href="https://myigel.name">MyIgel</a>.
+                </p>
+                <p>
+                    Please look at the <a href="https://github.com/engelsystem/engelsystem/graphs/contributors">
+                        contributor list on GitHub</a> for a complete list.
+                </p>
+            </div>
+        </div>
+    </div>
+{% endblock %}

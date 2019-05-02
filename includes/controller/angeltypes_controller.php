@@ -1,236 +1,358 @@
 <?php
 
+use Engelsystem\ShiftsFilter;
+use Engelsystem\ShiftsFilterRenderer;
+
 /**
  * Text for Angeltype related links.
+ *
+ * @return string
  */
-function angeltypes_title() {
-  return _("Angeltypes");
+function angeltypes_title()
+{
+    return __('Angeltypes');
 }
 
 /**
  * Route angeltype actions.
+ *
+ * @return array
  */
-function angeltypes_controller() {
-  if (! isset($_REQUEST['action']))
-    $_REQUEST['action'] = 'list';
+function angeltypes_controller()
+{
+    $action = strip_request_item('action', 'list');
 
-  switch ($_REQUEST['action']) {
-    default:
-    case 'list':
-      return angeltypes_list_controller();
-    case 'view':
-      return angeltype_controller();
-    case 'edit':
-      return angeltype_edit_controller();
-    case 'delete':
-      return angeltype_delete_controller();
-    case 'about':
-      return angeltypes_about_controller();
-  }
+    switch ($action) {
+        case 'view':
+            return angeltype_controller();
+        case 'edit':
+            return angeltype_edit_controller();
+        case 'delete':
+            return angeltype_delete_controller();
+        case 'about':
+            return angeltypes_about_controller();
+        case 'list':
+        default:
+            return angeltypes_list_controller();
+    }
+}
+
+/**
+ * Path to angeltype view.
+ *
+ * @param int   $angeltype_id AngelType id
+ * @param array $params       additional params
+ * @return string
+ */
+function angeltype_link($angeltype_id, $params = [])
+{
+    $params = array_merge(['action' => 'view', 'angeltype_id' => $angeltype_id], $params);
+    return page_link_to('angeltypes', $params);
 }
 
 /**
  * Job description for all angeltypes (public to everyone)
+ *
+ * @return array
  */
-function angeltypes_about_controller() {
-  global $privileges, $user;
+function angeltypes_about_controller()
+{
+    $user = auth()->user();
 
-  if (isset($user))
-    $angeltypes = AngelTypes_with_user($user);
-  else
-    $angeltypes = AngelTypes();
-  if ($angeltypes === false)
-    engelsystem_error("Unable to load angeltypes.");
+    if ($user) {
+        $angeltypes = AngelTypes_with_user($user->id);
+    } else {
+        $angeltypes = AngelTypes();
+    }
 
-  return array(
-      _("Teams/Job description"),
-      AngelTypes_about_view($angeltypes, isset($user))
-  );
+    return [
+        __('Teams/Job description'),
+        AngelTypes_about_view($angeltypes, (bool)$user)
+    ];
 }
 
 /**
  * Delete an Angeltype.
+ *
+ * @return array
  */
-function angeltype_delete_controller() {
-  global $privileges, $user;
+function angeltype_delete_controller()
+{
+    if (!auth()->can('admin_angel_types')) {
+        redirect(page_link_to('angeltypes'));
+    }
 
-  if (! in_array('admin_angel_types', $privileges))
-    redirect(page_link_to('angeltypes'));
+    $angeltype = load_angeltype();
 
-  $angeltype = AngelType($_REQUEST['angeltype_id']);
-  if ($angeltype === false)
-    engelsystem_error("Unable to load angeltype.");
-  if ($angeltype == null)
-    redirect(page_link_to('angeltypes'));
+    if (request()->hasPostData('delete')) {
+        AngelType_delete($angeltype);
+        success(sprintf(__('Angeltype %s deleted.'), AngelType_name_render($angeltype)));
+        redirect(page_link_to('angeltypes'));
+    }
 
-  if (isset($_REQUEST['confirmed'])) {
-    $result = AngelType_delete($angeltype);
-    if ($result === false)
-      engelsystem_error("Unable to delete angeltype.");
-
-    engelsystem_log("Deleted angeltype: " . $name);
-    success(sprintf(_("Angeltype %s deleted."), $name));
-    redirect(page_link_to('angeltypes'));
-  }
-
-  return array(
-      sprintf(_("Delete angeltype %s"), $angeltype['name']),
-      AngelType_delete_view($angeltype)
-  );
+    return [
+        sprintf(__('Delete angeltype %s'), $angeltype['name']),
+        AngelType_delete_view($angeltype)
+    ];
 }
 
 /**
  * Change an Angeltype.
+ *
+ * @return array
  */
-function angeltype_edit_controller() {
-  global $privileges, $user;
+function angeltype_edit_controller()
+{
+    // In supporter mode only allow to modify description
+    $supporter_mode = !auth()->can('admin_angel_types');
+    $request = request();
 
-  $name = "";
-  $restricted = false;
-  $description = "";
+    if ($request->has('angeltype_id')) {
+        // Edit existing angeltype
+        $angeltype = load_angeltype();
 
-  if (isset($_REQUEST['angeltype_id'])) {
-    $angeltype = AngelType($_REQUEST['angeltype_id']);
-    if ($angeltype === false)
-      engelsystem_error("Unable to load angeltype.");
-    if ($angeltype == null)
-      redirect(page_link_to('angeltypes'));
-
-    $name = $angeltype['name'];
-    $restricted = $angeltype['restricted'];
-    $description = $angeltype['description'];
-
-    if (! User_is_AngelType_coordinator($user, $angeltype))
-      redirect(page_link_to('angeltypes'));
-  } else {
-    if (! in_array('admin_angel_types', $privileges))
-      redirect(page_link_to('angeltypes'));
-  }
-
-  // In coordinator mode only allow to modify description
-  $coordinator_mode = ! in_array('admin_angel_types', $privileges);
-
-  if (isset($_REQUEST['submit'])) {
-    $ok = true;
-
-    if (! $coordinator_mode) {
-      if (isset($_REQUEST['name'])) {
-        list($valid, $name) = AngelType_validate_name($_REQUEST['name'], $angeltype);
-        if (! $valid) {
-          $ok = false;
-          error(_("Please check the name. Maybe it already exists."));
+        if (!User_is_AngelType_supporter(auth()->user(), $angeltype)) {
+            redirect(page_link_to('angeltypes'));
         }
-      }
-
-      $restricted = isset($_REQUEST['restricted']);
+    } else {
+        // New angeltype
+        if ($supporter_mode) {
+            // Supporters aren't allowed to create new angeltypes.
+            redirect(page_link_to('angeltypes'));
+        }
+        $angeltype = AngelType_new();
     }
 
-    if (isset($_REQUEST['description']))
-      $description = strip_request_item_nl('description');
+    if ($request->hasPostData('submit')) {
+        $valid = true;
 
-    if ($ok) {
-      $restricted = $restricted ? 1 : 0;
-      if (isset($angeltype)) {
-        $result = AngelType_update($angeltype['id'], $name, $restricted, $description);
-        if ($result === false)
-          engelsystem_error("Unable to update angeltype.");
-        engelsystem_log("Updated angeltype: " . $name . ", restricted: " . $restricted);
-        $angeltype_id = $angeltype['id'];
-      } else {
-        $angeltype_id = AngelType_create($name, $restricted, $description);
-        if ($angeltype_id === false)
-          engelsystem_error("Unable to create angeltype.");
-        engelsystem_log("Created angeltype: " . $name . ", restricted: " . $restricted);
-      }
+        if (!$supporter_mode) {
+            if ($request->has('name')) {
+                $result = AngelType_validate_name($request->postData('name'), $angeltype);
+                $angeltype['name'] = $result->getValue();
+                if (!$result->isValid()) {
+                    $valid = false;
+                    error(__('Please check the name. Maybe it already exists.'));
+                }
+            }
 
-      success("Angel type saved.");
-      redirect(page_link_to('angeltypes') . '&action=view&angeltype_id=' . $angeltype_id);
+            $angeltype['restricted'] = $request->has('restricted');
+            $angeltype['no_self_signup'] = $request->has('no_self_signup');
+            $angeltype['show_on_dashboard'] = $request->has('show_on_dashboard');
+
+            $angeltype['requires_driver_license'] = $request->has('requires_driver_license');
+        }
+
+        $angeltype['description'] = strip_request_item_nl('description', $angeltype['description']);
+
+        $angeltype['contact_name'] = strip_request_item('contact_name', $angeltype['contact_name']);
+        $angeltype['contact_dect'] = strip_request_item('contact_dect', $angeltype['contact_dect']);
+        $angeltype['contact_email'] = strip_request_item('contact_email', $angeltype['contact_email']);
+
+        if ($valid) {
+            if (!empty($angeltype['id'])) {
+                AngelType_update($angeltype);
+            } else {
+                $angeltype = AngelType_create($angeltype);
+            }
+
+            success('Angel type saved.');
+            redirect(angeltype_link($angeltype['id']));
+        }
     }
-  }
 
-  return array(
-      sprintf(_("Edit %s"), $name),
-      AngelType_edit_view($name, $restricted, $description, $coordinator_mode)
-  );
+    return [
+        sprintf(__('Edit %s'), $angeltype['name']),
+        AngelType_edit_view($angeltype, $supporter_mode)
+    ];
 }
 
 /**
  * View details of a given angeltype.
+ *
+ * @return array
  */
-function angeltype_controller() {
-  global $privileges, $user;
+function angeltype_controller()
+{
+    $user = auth()->user();
 
-  if (! in_array('angeltypes', $privileges))
-    redirect('?');
+    if (!auth()->can('angeltypes')) {
+        redirect(page_link_to('/'));
+    }
 
-  if (! isset($_REQUEST['angeltype_id']))
-    redirect(page_link_to('angeltypes'));
+    $angeltype = load_angeltype();
+    $user_angeltype = UserAngelType_by_User_and_AngelType($user->id, $angeltype);
+    $user_driver_license = UserDriverLicense($user->id);
+    $members = Users_by_angeltype($angeltype);
 
-  $angeltype = AngelType($_REQUEST['angeltype_id']);
-  if ($angeltype === false)
-    engelsystem_error("Unable to load angeltype.");
-  if ($angeltype == null)
-    redirect(page_link_to('angeltypes'));
+    $days = angeltype_controller_shiftsFilterDays($angeltype);
+    $shiftsFilter = angeltype_controller_shiftsFilter($angeltype, $days);
 
-  $user_angeltype = UserAngelType_by_User_and_AngelType($user, $angeltype);
-  if ($user_angeltype === false)
-    engelsystem_error("Unable to load user angeltype.");
+    $shiftsFilterRenderer = new ShiftsFilterRenderer($shiftsFilter);
+    $shiftsFilterRenderer->enableDaySelection($days);
 
-  $members = Users_by_angeltype($angeltype);
-  if ($members === false)
-    engelsystem_error("Unable to load members.");
+    $shiftCalendarRenderer = shiftCalendarRendererByShiftFilter($shiftsFilter);
+    $request = request();
+    $tab = 0;
 
-  return array(
-      sprintf(_("Team %s"), $angeltype['name']),
-      AngelType_view($angeltype, $members, $user_angeltype, in_array('admin_user_angeltypes', $privileges) || $user_angeltype['coordinator'], in_array('admin_angel_types', $privileges), $user_angeltype['coordinator'])
-  );
+    if ($request->has('shifts_filter_day')) {
+        $tab = 1;
+    }
+
+    return [
+        sprintf(__('Team %s'), $angeltype['name']),
+        AngelType_view(
+            $angeltype,
+            $members,
+            $user_angeltype,
+            auth()->can('admin_user_angeltypes') || $user_angeltype['supporter'],
+            auth()->can('admin_angel_types'),
+            $user_angeltype['supporter'],
+            $user_driver_license,
+            $user,
+            $shiftsFilterRenderer,
+            $shiftCalendarRenderer,
+            $tab
+        )
+    ];
+}
+
+/**
+ * On which days do shifts for this angeltype occur? Needed for shiftCalendar.
+ *
+ * @param array $angeltype
+ * @return array
+ */
+function angeltype_controller_shiftsFilterDays($angeltype)
+{
+    $all_shifts = Shifts_by_angeltype($angeltype);
+    $days = [];
+    foreach ($all_shifts as $shift) {
+        $day = date('Y-m-d', $shift['start']);
+        if (!in_array($day, $days)) {
+            $days[] = $day;
+        }
+    }
+    return $days;
+}
+
+/**
+ * Sets up the shift filter for the angeltype.
+ *
+ * @param array $angeltype
+ * @param array $days
+ * @return ShiftsFilter
+ */
+function angeltype_controller_shiftsFilter($angeltype, $days)
+{
+    $request = request();
+    $shiftsFilter = new ShiftsFilter(
+        auth()->can('user_shifts_admin'),
+        Room_ids(),
+        [$angeltype['id']]
+    );
+    $selected_day = date('Y-m-d');
+    if (!empty($days)) {
+        $selected_day = $days[0];
+    }
+    if ($request->has('shifts_filter_day')) {
+        $selected_day = $request->input('shifts_filter_day');
+    }
+    $shiftsFilter->setStartTime(parse_date('Y-m-d H:i', $selected_day . ' 00:00'));
+    $shiftsFilter->setEndTime(parse_date('Y-m-d H:i', $selected_day . ' 23:59'));
+
+    return $shiftsFilter;
 }
 
 /**
  * View a list of all angeltypes.
+ *
+ * @return array
  */
-function angeltypes_list_controller() {
-  global $privileges, $user;
+function angeltypes_list_controller()
+{
+    $user = auth()->user();
 
-  if (! in_array('angeltypes', $privileges))
-    redirect('?');
-
-  $angeltypes = AngelTypes_with_user($user);
-  if ($angeltypes === false)
-    engelsystem_error("Unable to load angeltypes.");
-
-  foreach ($angeltypes as &$angeltype) {
-    $actions = array(
-        button(page_link_to('angeltypes') . '&action=view&angeltype_id=' . $angeltype['id'],_("view"),"btn-xs")
-        //'<a class="view btn btn-default" href="' . page_link_to('angeltypes') . '&action=view&angeltype_id=' . $angeltype['id'] . '">' . _("view") . '</a>'
-    );
-
-    if (in_array('admin_angel_types', $privileges)) {
-      $actions[] = button(page_link_to('angeltypes') . '&action=edit&angeltype_id=' . $angeltype['id'], _("edit"), "btn-xs");
-      $actions[] = button(page_link_to('angeltypes') . '&action=delete&angeltype_id=' . $angeltype['id'], _("delete"), "btn-xs");
-
-      //$actions[] = '<a class="edit" href="' . page_link_to('angeltypes') . '&action=edit&angeltype_id=' . $angeltype['id'] . '">' . _("edit") . '</a>';
-      //$actions[] = '<a class="delete" href="' . page_link_to('angeltypes') . '&action=delete&angeltype_id=' . $angeltype['id'] . '">' . _("delete") . '</a>';
+    if (!auth()->can('angeltypes')) {
+        redirect(page_link_to('/'));
     }
 
-    $angeltype['membership'] = AngelType_render_membership($angeltype);
-    if ($angeltype['user_angeltype_id'] != null) {
-      //$actions[] = '<a class="cancel" href="' . page_link_to('user_angeltypes') . '&action=delete&user_angeltype_id=' . $angeltype['user_angeltype_id'] . '">' . _("leave") . '</a>';
-      $actions[] = button(page_link_to('user_angeltypes') . '&action=delete&user_angeltype_id=' . $angeltype['user_angeltype_id'], _("leave"), "btn-xs");
-    } else {
-      $actions[] = button(page_link_to('user_angeltypes') . '&action=add&angeltype_id=' . $angeltype['id'], _("join"), "btn-xs");
-      //$actions[] = '<a class="add" href="' . page_link_to('user_angeltypes') . '&action=add&angeltype_id=' . $angeltype['id'] . '">' . _("join") . '</a>';
+    $angeltypes = AngelTypes_with_user($user->id);
+
+    foreach ($angeltypes as &$angeltype) {
+        $actions = [
+            button(
+                page_link_to('angeltypes', ['action' => 'view', 'angeltype_id' => $angeltype['id']]),
+                __('view'),
+                'btn-xs'
+            )
+        ];
+
+        if (auth()->can('admin_angel_types')) {
+            $actions[] = button(
+                page_link_to('angeltypes', ['action' => 'edit', 'angeltype_id' => $angeltype['id']]),
+                __('edit'),
+                'btn-xs'
+            );
+            $actions[] = button(
+                page_link_to('angeltypes', ['action' => 'delete', 'angeltype_id' => $angeltype['id']]),
+                __('delete'),
+                'btn-xs'
+            );
+        }
+
+        $angeltype['membership'] = AngelType_render_membership($angeltype);
+        if (!empty($angeltype['user_angeltype_id'])) {
+            $actions[] = button(
+                page_link_to('user_angeltypes',
+                    ['action' => 'delete', 'user_angeltype_id' => $angeltype['user_angeltype_id']]
+                ),
+                __('leave'),
+                'btn-xs'
+            );
+        } else {
+            $actions[] = button(
+                page_link_to('user_angeltypes', ['action' => 'add', 'angeltype_id' => $angeltype['id']]),
+                __('join'),
+                'btn-xs'
+            );
+        }
+
+        $angeltype['restricted'] = $angeltype['restricted'] ? glyph('lock') : '';
+        $angeltype['no_self_signup'] = $angeltype['no_self_signup'] ? '' : glyph('share');
+
+        $angeltype['name'] = '<a href="'
+            . page_link_to('angeltypes', ['action' => 'view', 'angeltype_id' => $angeltype['id']])
+            . '">'
+            . $angeltype['name']
+            . '</a>';
+
+        $angeltype['actions'] = table_buttons($actions);
     }
 
-    $angeltype['restricted'] = $angeltype['restricted'] ? glyph('lock') : '';
-    $angeltype['name'] = '<a href="' . page_link_to('angeltypes') . '&action=view&angeltype_id=' . $angeltype['id'] . '">' . $angeltype['name'] . '</a>';
-
-    $angeltype['actions'] = table_buttons($actions);
-  }
-
-  return array(
-      angeltypes_title(),
-      AngelTypes_list_view($angeltypes, in_array('admin_angel_types', $privileges))
-  );
+    return [
+        angeltypes_title(),
+        AngelTypes_list_view($angeltypes, auth()->can('admin_angel_types'))
+    ];
 }
-?>
+
+/**
+ * Loads an angeltype from given angeltype_id request param.
+ *
+ * @return array
+ */
+function load_angeltype()
+{
+    $request = request();
+    if (!$request->has('angeltype_id')) {
+        redirect(page_link_to('angeltypes'));
+    }
+
+    $angeltype = AngelType($request->input('angeltype_id'));
+    if (empty($angeltype)) {
+        error(__('Angeltype doesn\'t exist . '));
+        redirect(page_link_to('angeltypes'));
+    }
+
+    return $angeltype;
+}

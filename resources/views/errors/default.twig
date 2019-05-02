@@ -1,0 +1,21 @@
+{% extends "layouts/app.twig" %}
+
+{% block title %}Error {{ status }}{% endblock %}
+
+{% block content %}
+    <div class="container">
+        {% block content_container %}
+            <div class="alert alert-info">
+
+                {% block content_headline %}
+                    <h2>{% block content_headline_text %}Error {{ status }}{% endblock %}</h2>
+                {% endblock %}
+
+                {% block content_text %}
+                    {{ content }}
+                {% endblock %}
+
+            </div>
+        {% endblock %}
+    </div>
+{% endblock %}

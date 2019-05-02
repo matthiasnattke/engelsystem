@@ -1,42 +1,82 @@
 <?php
 
-// publically available page to feed the news to feedreaders
-function user_atom() {
-  global $ical_shifts, $user, $DISPLAY_NEWS;
+use Engelsystem\Database\DB;
 
-  if (isset ($_REQUEST['key']) && preg_match("/^[0-9a-f]{32}$/", $_REQUEST['key']))
-    $key = $_REQUEST['key'];
-  else
-    die("Missing key.");
+/**
+ * Publically available page to feed the news to feed readers
+ */
+function user_atom()
+{
+    $request = request();
 
-  $user = User_by_api_key($key);
-  if($user === false)
-    die("Unable to find user.");
-  if($user == null)
-    die("Key invalid.");
-  if(!in_array('atom', privileges_for_user($user['UID'])))
-    die("No privilege for atom.");
+    if (!$request->has('key') || !preg_match('/^[\da-f]{32}$/', $request->input('key'))) {
+        engelsystem_error('Missing key.');
+    }
 
-  $news = sql_select("SELECT * FROM `News` " . (empty($_REQUEST['meetings'])? '' : 'WHERE `Treffen` = 1 ') . "ORDER BY `ID` DESC LIMIT " . sql_escape($DISPLAY_NEWS));
+    $user = auth()->apiUser('key');
+    if (empty($user)) {
+        engelsystem_error('Key invalid.');
+    }
+    if (!auth()->can('atom')) {
+        engelsystem_error('No privilege for atom.');
+    }
 
-  header('Content-Type: application/atom+xml; charset=utf-8');
-  $html = '<?xml version="1.0" encoding="utf-8"?>
+    $news = DB::select('
+        SELECT *
+        FROM `News`
+        ' . (!$request->has('meetings') ? '' : 'WHERE `Treffen` = 1 ') . '
+        ORDER BY `ID`
+        DESC LIMIT ' . (int)config('display_news')
+    );
+
+    $output = make_atom_entries_from_news($news);
+
+    header('Content-Type: application/atom+xml; charset=utf-8');
+    header('Content-Length: ' . strlen($output));
+    raw_output($output);
+}
+
+/**
+ * @param array[] $news_entries
+ * @return string
+ */
+function make_atom_entries_from_news($news_entries)
+{
+    $request = app('request');
+    $html = '<?xml version="1.0" encoding="utf-8"?>
   <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>Engelsystem</title>
-  <id>' . $_SERVER['HTTP_HOST'] . htmlspecialchars(preg_replace('#[&?]key=[a-f0-9]{32}#', '', $_SERVER['REQUEST_URI'])) . '</id>
-  <updated>' . date('Y-m-d\TH:i:sP', $news[0]['Datum']) . "</updated>\n";
-  foreach ($news as $news_entry) {
-    $html .= "  <entry>
-    <title>" . htmlspecialchars($news_entry['Betreff']) . "</title>
-    <link href=\"" . page_link_to_absolute("news_comments&amp;nid=") . "${news_entry['ID']}\"/>
-    <id>" . preg_replace('#^https?://#', '', page_link_to_absolute("news")) . "-${news_entry['ID']}</id>
-    <updated>" . date('Y-m-d\TH:i:sP', $news_entry['Datum']) . "</updated>
-    <summary type=\"html\">" . htmlspecialchars($news_entry['Text']) . "</summary>
-    </entry>\n";
+  <title>' . config('app_name') . '</title>
+  <id>' . $request->getHttpHost()
+        . htmlspecialchars(preg_replace(
+            '#[&?]key=[a-f\d]{32}#',
+            '',
+            $request->getRequestUri()
+        ))
+        . '</id>
+  <updated>' . date('Y-m-d\TH:i:sP', $news_entries[0]['Datum']) . '</updated>' . "\n";
+    foreach ($news_entries as $news_entry) {
+        $html .= make_atom_entry_from_news($news_entry);
+    }
+    $html .= '</feed>';
+    return $html;
 }
-$html .= "</feed>";
-header("Content-Length: " . strlen($html));
-echo $html;
-die();
+
+/**
+ * @param array $news_entry
+ * @return string
+ */
+function make_atom_entry_from_news($news_entry)
+{
+    return '
+  <entry>
+    <title>' . htmlspecialchars($news_entry['Betreff']) . '</title>
+    <link href="' . page_link_to('news_comments', ['nid' => $news_entry['ID']]) . '"/>
+    <id>' . preg_replace(
+            '#^https?://#',
+            '',
+            page_link_to('news_comments', ['nid' => $news_entry['ID']])
+        ) . '</id>
+    <updated>' . date('Y-m-d\TH:i:sP', $news_entry['Datum']) . '</updated>
+    <summary>' . htmlspecialchars($news_entry['Text']) . '</summary>
+  </entry>' . "\n";
 }
-?>

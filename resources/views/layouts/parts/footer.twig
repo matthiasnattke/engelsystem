@@ -1,0 +1,38 @@
+<div class="col-md-12">
+    <hr/>
+    <div class="text-center footer" style="margin-bottom: 10px;">
+        {% block eventinfo %}
+            {% if config('name') %}
+                {% if config('event_start') and config('event_end') %}
+                    {{ __('%s, from %s to %s', [
+                        config('name'),
+                        config('event_start').format(__('Y-m-d')),
+                        config('event_end').format(__('Y-m-d'))
+                    ]) }}
+                {% elseif config('event_start') %}
+                    {{ __('%s, starting %s', [
+                        config('name'),
+                        config('event_start').format(__('Y-m-d'))
+                    ]) }}
+                {% else %}
+                    {{ config('name') }}
+                {% endif %} <br>
+            {% elseif config('event_start') and config('event_end') %}
+                {{ __('Event from %s to %s', [
+                    config('event_start').format(__('Y-m-d')),
+                    config('event_end').format(__('Y-m-d'))
+                ]) }} <br>
+            {% endif %}
+        {% endblock %}
+
+        {% for name,url in config('footer_items') %}
+            <a href="{{ url }}">
+                {% if '@' in url %}<span class="glyphicon glyphicon-envelope"></span>{% endif %}
+                {{ __(name) }}
+            </a> ·
+        {% endfor %}
+          <a href="https://github.com/engelsystem/engelsystem/issues">{{ __('Bugs / Features') }}</a>
+        · <a href="https://github.com/engelsystem/engelsystem/">{{ __('Development Platform') }}</a>
+        · <a href="{{ url('credits') }}">{{ __('Credits') }}</a>
+    </div>
+</div>
