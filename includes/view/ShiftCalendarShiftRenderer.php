@@ -74,6 +74,7 @@ class ShiftCalendarShiftRenderer
                 return 'primary';
 
             case ShiftSignupState::NOT_ARRIVED:
+            case ShiftSignupState::NOT_YET:
             case ShiftSignupState::SHIFT_ENDED:
                 return 'default';
 
@@ -189,7 +190,7 @@ class ShiftCalendarShiftRenderer
                     . '</a> '
                     . button(
                         shift_entry_create_link($shift, $angeltype),
-                        __('Sign up'), 'btn-xs btn-primary'
+                        __('Sign up'), 'btn-xs btn-primary hidden-print'
                     );
                 break;
 
@@ -201,6 +202,10 @@ class ShiftCalendarShiftRenderer
             case ShiftSignupState::NOT_ARRIVED:
                 // No link and add a text hint, when the shift ended
                 $entry_list[] = $inner_text . ' (' . __('please arrive for signup') . ')';
+                break;
+
+            case ShiftSignupState::NOT_YET:
+                $entry_list[] = $inner_text . ' (' . __('not yet') . ')';
                 break;
 
             case ShiftSignupState::ANGELTYPE:
@@ -245,7 +250,7 @@ class ShiftCalendarShiftRenderer
     /**
      * Renders the shift header
      *
-     * @param array $shift The shift
+     * @param array  $shift The shift
      * @param string $class The shift state class
      * @return string
      */
@@ -253,7 +258,7 @@ class ShiftCalendarShiftRenderer
     {
         $header_buttons = '';
         if (auth()->can('admin_shifts')) {
-            $header_buttons = '<div class="pull-right">' . table_buttons([
+            $header_buttons = '<div class="pull-right hidden-print">' . table_buttons([
                     button(
                         page_link_to('user_shifts', ['edit_shift' => $shift['SID']]),
                         glyph('edit'),

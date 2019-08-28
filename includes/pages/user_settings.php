@@ -70,13 +70,17 @@ function user_settings_main($user_source, $enable_tshirt_size, $tshirt_sizes)
     }
 
     // Trivia
-    $user_source->personalData->last_name = strip_request_item('lastname', $user_source->personalData->last_name);
-    $user_source->personalData->first_name = strip_request_item('prename', $user_source->personalData->first_name);
-    if (strlen(strip_request_item('dect')) <= 40) {
-        $user_source->contact->dect = strip_request_item('dect', $user_source->contact->dect);
-    } else {
-        $valid = false;
-        error(__('For dect numbers are only 40 digits allowed.'));
+    if(config('enable_user_name')) {
+        $user_source->personalData->last_name = strip_request_item('lastname', $user_source->personalData->last_name);
+        $user_source->personalData->first_name = strip_request_item('prename', $user_source->personalData->first_name);
+    }
+    if (config('enable_dect')) {
+        if (strlen(strip_request_item('dect')) <= 40) {
+            $user_source->contact->dect = strip_request_item('dect', $user_source->contact->dect);
+        } else {
+            $valid = false;
+            error(__('For dect numbers are only 40 digits allowed.'));
+        }
     }
     $user_source->contact->mobile = strip_request_item('mobile', $user_source->contact->mobile);
 
@@ -101,9 +105,10 @@ function user_settings_main($user_source, $enable_tshirt_size, $tshirt_sizes)
 function user_settings_password($user_source)
 {
     $request = request();
+    $auth = auth();
     if (
         !$request->has('password')
-        || !verify_password($request->postData('password'), $user_source->password, $user_source->id)
+        || !$auth->verifyPassword($user_source, $request->postData('password'))
     ) {
         error(__('-> not OK. Please try again.'));
     } elseif (strlen($request->postData('new_password')) < config('min_password_length')) {
@@ -111,7 +116,7 @@ function user_settings_password($user_source)
     } elseif ($request->postData('new_password') != $request->postData('new_password2')) {
         error(__('Your passwords don\'t match.'));
     } else {
-        set_password($user_source->id, $request->postData('new_password'));
+        $auth->setPassword($user_source, $request->postData('new_password'));
         success(__('Password saved.'));
     }
     redirect(page_link_to('user_settings'));

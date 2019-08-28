@@ -25,6 +25,7 @@ function User_settings_view(
     $tshirt_sizes
 ) {
     $personalData = $user_source->personalData;
+    $enable_user_name = config('enable_user_name');
     $enable_dect = config('enable_dect');
     $enable_planned_arrival = config('enable_planned_arrival');
 
@@ -36,9 +37,12 @@ function User_settings_view(
                     form_info('', __('Here you can change your user details.')),
                     form_info(entry_required() . ' = ' . __('Entry required!')),
                     form_text('nick', __('Nick'), $user_source->name, true),
-                    form_info('', __('Use up to 23 letters, numbers, connecting punctuations or spaces for your nickname.')),
-                    form_text('lastname', __('Last name'), $personalData->last_name),
-                    form_text('prename', __('First name'), $personalData->first_name),
+                    form_info(
+                        '',
+                        __('Use up to 23 letters, numbers, connecting punctuations or spaces for your nickname.')
+                    ),
+                    $enable_user_name ? form_text('lastname', __('Last name'), $personalData->last_name) : '',
+                    $enable_user_name ? form_text('prename', __('First name'), $personalData->first_name) : '',
                     $enable_planned_arrival ? form_date(
                         'planned_arrival_date',
                         __('Planned date of arrival') . ' ' . entry_required(),
@@ -123,7 +127,7 @@ function User_registration_success_view($event_welcome_message)
             div('col-md-4', [
                 '<h2>' . __('Login') . '</h2>',
                 form([
-                    form_text('nick', __('Nick'), ''),
+                    form_text('login', __('Nick'), ''),
                     form_password('password', __('Password')),
                     form_submit('submit', __('Login')),
                     buttons([
@@ -229,6 +233,10 @@ function Users_view(
         $u['force_active'] = glyph_bool($user->state->force_active);
         $u['got_shirt'] = glyph_bool($user->state->got_shirt);
         $u['shirt_size'] = $user->personalData->shirt_size;
+        $u['arrival_date'] = $user->personalData->planned_arrival_date
+            ? $user->personalData->planned_arrival_date->format(__('Y-m-d')) : '';
+        $u['departure_date'] = $user->personalData->planned_departure_date
+            ? $user->personalData->planned_departure_date->format(__('Y-m-d')) : '';
         $u['last_login_at'] = $user->last_login_at ? $user->last_login_at->format(__('m/d/Y h:i a')) : '';
         $u['actions'] = table_buttons([
             button_glyph(page_link_to('admin_user', ['id' => $user->id]), 'edit', 'btn-xs')
@@ -246,26 +254,34 @@ function Users_view(
         'actions'      => '<strong>' . count($usersList) . '</strong>'
     ];
 
+    $user_table_headers = [
+        'name'           => Users_table_header_link('name', __('Nick'), $order_by)
+    ];
+    if(config('enable_user_name')) {
+        $user_table_headers['first_name'] = Users_table_header_link('first_name', __('Prename'), $order_by);
+        $user_table_headers['last_name'] = Users_table_header_link('last_name', __('Name'), $order_by);
+    }
+    if(config('enable_dect')) {
+        $user_table_headers['dect'] = Users_table_header_link('dect', __('DECT'), $order_by);
+    }
+    $user_table_headers['arrived'] = Users_table_header_link('arrived', __('Arrived'), $order_by);
+    $user_table_headers['got_voucher'] = Users_table_header_link('got_voucher', __('Voucher'), $order_by);
+    $user_table_headers['freeloads'] = __('Freeloads');
+    $user_table_headers['active'] = Users_table_header_link('active', __('Active'), $order_by);
+    $user_table_headers['force_active'] = Users_table_header_link('force_active', __('Forced'), $order_by);
+    $user_table_headers['got_shirt'] = Users_table_header_link('got_shirt', __('T-Shirt'), $order_by);
+    $user_table_headers['shirt_size'] = Users_table_header_link('shirt_size', __('Size'), $order_by);
+    $user_table_headers['arrival_date'] = Users_table_header_link('planned_arrival_date', __('Planned arrival'), $order_by);
+    $user_table_headers['departure_date'] = Users_table_header_link('planned_departure_date', __('Planned departure'), $order_by);
+    $user_table_headers['last_login_at'] = Users_table_header_link('last_login_at', __('Last login'), $order_by);
+    $user_table_headers['actions'] = '';
+
     return page_with_title(__('All users'), [
         msg(),
         buttons([
             button(page_link_to('register'), glyph('plus') . __('New user'))
         ]),
-        table([
-            'name'          => Users_table_header_link('name', __('Nick'), $order_by),
-            'first_name'    => Users_table_header_link('first_name', __('Prename'), $order_by),
-            'last_name'     => Users_table_header_link('last_name', __('Name'), $order_by),
-            'dect'          => Users_table_header_link('dect', __('DECT'), $order_by),
-            'arrived'       => Users_table_header_link('arrived', __('Arrived'), $order_by),
-            'got_voucher'   => Users_table_header_link('got_voucher', __('Voucher'), $order_by),
-            'freeloads'     => __('Freeloads'),
-            'active'        => Users_table_header_link('active', __('Active'), $order_by),
-            'force_active'  => Users_table_header_link('force_active', __('Forced'), $order_by),
-            'got_shirt'     => Users_table_header_link('got_shirt', __('T-Shirt'), $order_by),
-            'shirt_size'    => Users_table_header_link('shirt_size', __('Size'), $order_by),
-            'last_login_at' => Users_table_header_link('last_login_at', __('Last login'), $order_by),
-            'actions'       => ''
-        ], $usersList)
+        table($user_table_headers, $usersList)
     ]);
 }
 
@@ -399,7 +415,7 @@ function User_view_myshift($shift, $user_source, $its_me)
 
     if ($shift['freeloaded']) {
         $myshift['duration'] = '<p class="text-danger">'
-            . round(-($shift['end'] - $shift['start']) / 3600 * 2, 2) . '&nbsp;h'
+            . sprintf('%.2f', -($shift['end'] - $shift['start']) / 3600 * 2) . '&nbsp;h'
             . '</p>';
         if (auth()->can('user_shifts_admin')) {
             $myshift['comment'] .= '<br />'
@@ -455,7 +471,8 @@ function User_view_myshifts(
     $myshifts_table = [];
     $timeSum = 0;
     foreach ($shifts as $shift) {
-        $myshifts_table[$shift['start']] = User_view_myshift($shift, $user_source, $its_me);
+        $key = $shift['start'] . '-shift-' . $shift['SID'];
+        $myshifts_table[$key] = User_view_myshift($shift, $user_source, $its_me);
 
         if (!$shift['freeloaded']) {
             $timeSum += ($shift['end'] - $shift['start']);
@@ -463,14 +480,9 @@ function User_view_myshifts(
     }
 
     if ($its_me || $admin_user_worklog_privilege) {
-        $day_counter = 1;
         foreach ($user_worklogs as $worklog) {
-            // Check if more than one worklog per day
-            if (isset($myshifts_table[$worklog['work_timestamp']])) {
-                $worklog['work_timestamp'] += $day_counter++;
-            }
-
-            $myshifts_table[$worklog['work_timestamp']] = User_view_worklog($worklog, $admin_user_worklog_privilege);
+            $key = $worklog['work_timestamp'] . '-worklog-' . $worklog['id'];
+            $myshifts_table[$key] = User_view_worklog($worklog, $admin_user_worklog_privilege);
             $timeSum += $worklog['work_hours'] * 3600;
         }
     }
@@ -600,7 +612,7 @@ function User_view(
     return page_with_title(
         '<span class="icon-icon_angel"></span> '
         . htmlspecialchars($user_source->name)
-        . ' <small>' . $user_name . '</small>',
+        . (config('enable_user_name') ? ' <small>' . $user_name . '</small>' : ''),
         [
             msg(),
             div('row space-top', [
@@ -614,10 +626,12 @@ function User_view(
                             user_driver_license_edit_link($user_source),
                             glyph('road') . __('driving license')
                         ) : '',
-                        ($admin_user_privilege && !$user_source->state->arrived) ? button(
-                            page_link_to('admin_arrive', ['arrived' => $user_source->id]),
-                            __('arrived')
-                        ) : '',
+                        ($admin_user_privilege && !$user_source->state->arrived) ?
+                            form([
+                                form_hidden('action', 'arrived'),
+                                form_hidden('user', $user_source->id),
+                                form_submit('submit', __('arrived'), '', false, 'default')
+                            ], page_link_to('admin_arrive'), true) : '',
                         $admin_user_privilege ? button(
                             page_link_to(
                                 'users',
@@ -856,12 +870,17 @@ function User_groups_render($user_groups)
  * Render a user nickname.
  *
  * @param array|User $user
+ * @param bool       $plain
  * @return string
  */
-function User_Nick_render($user)
+function User_Nick_render($user, $plain = false)
 {
     if (is_array($user)) {
         $user = (new User())->forceFill($user);
+    }
+
+    if ($plain) {
+        return sprintf('%s (%u)', $user->name, $user->id);
     }
 
     return render_profile_link(

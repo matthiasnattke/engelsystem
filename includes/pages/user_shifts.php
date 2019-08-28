@@ -252,7 +252,8 @@ function view_user_shifts()
                     [
                         button(
                             'javascript: checkOwnTypes(\'selection_types\', ' . json_encode($ownTypes) . ')',
-                            __('Own')
+                            __('Own'),
+                            'hidden-print'
                         ),
                     ]
                 ),
@@ -289,7 +290,7 @@ function ical_hint()
 {
     $user = auth()->user();
 
-    return heading(__('iCal export'), 2)
+    return heading(__('iCal export') . ' ' . button_help('user/ical'), 2)
         . '<p>' . sprintf(
             __('Export your own shifts. <a href="%s">iCal format</a> or <a href="%s">JSON format</a> available (please keep secret, otherwise <a href="%s">reset the api key</a>).'),
             page_link_to('ical', ['key' => $user->api_key]),
@@ -324,8 +325,8 @@ function make_select($items, $selected, $name, $title = null, $additionalButtons
     }
 
     $buttons = [];
-    $buttons[] = button('javascript: checkAll(\'selection_' . $name . '\', true)', __('All'));
-    $buttons[] = button('javascript: checkAll(\'selection_' . $name . '\', false)', __('None'));
+    $buttons[] = button('javascript: checkAll(\'selection_' . $name . '\', true)', __('All'), 'hidden-print');
+    $buttons[] = button('javascript: checkAll(\'selection_' . $name . '\', false)', __('None'), 'hidden-print');
     $buttons = array_merge($buttons, $additionalButtons);
 
     $html .= buttons($buttons);

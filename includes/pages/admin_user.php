@@ -52,8 +52,10 @@ function admin_user()
         $html .= '  <tr><td>Last login</td><td><p class="help-block">'
             . ($user_source->last_login_at ? $user_source->last_login_at->format('Y-m-d H:i') : '-')
             . '</p></td></tr>' . "\n";
-        $html .= '  <tr><td>Name</td><td>' . '<input size="40" name="eName" value="' . $user_source->personalData->last_name . '" class="form-control"></td></tr>' . "\n";
-        $html .= '  <tr><td>Vorname</td><td>' . '<input size="40" name="eVorname" value="' . $user_source->personalData->first_name . '" class="form-control"></td></tr>' . "\n";
+        if (config('enable_user_name')) {
+            $html .= '  <tr><td>Name</td><td>' . '<input size="40" name="eName" value="' . $user_source->personalData->last_name . '" class="form-control"></td></tr>' . "\n";
+            $html .= '  <tr><td>Vorname</td><td>' . '<input size="40" name="eVorname" value="' . $user_source->personalData->first_name . '" class="form-control"></td></tr>' . "\n";
+        }
         $html .= '  <tr><td>Handy</td><td>' . '<input type= "tel" size="40" name="eHandy" value="' . $user_source->contact->mobile . '" class="form-control"></td></tr>' . "\n";
         if (config('enable_dect')) {
             $html .= '  <tr><td>DECT</td><td>' . '<input size="40" name="eDECT" value="' . $user_source->contact->dect . '" class="form-control"></td></tr>' . "\n";
@@ -78,9 +80,9 @@ function admin_user()
         // Gekommen?
         $html .= '  <tr><td>Gekommen</td><td>' . "\n";
         if ($user_source->state->arrived) {
-            $html .= _('Yes');
+            $html .= __('Yes');
         } else {
-            $html .= _('No');
+            $html .= __('No');
         }
         $html .= '</td></tr>' . "\n";
 
@@ -196,7 +198,7 @@ function admin_user()
                     if (
                         count($my_highest_group) > 0
                         && (
-                            count($his_highest_group) == 0
+                            empty($his_highest_group)
                             || ($my_highest_group['group_id'] <= $his_highest_group['group_id'])
                         )
                     ) {
@@ -240,7 +242,7 @@ function admin_user()
                         }
                         $user_source = User::find($user_id);
                         engelsystem_log(
-                            'Set groups of ' . User_Nick_render($user_source) . ' to: '
+                            'Set groups of ' . User_Nick_render($user_source, true) . ' to: '
                             . join(', ', $user_groups_info)
                         );
                         $html .= success('Benutzergruppen gespeichert.', true);
@@ -262,12 +264,14 @@ function admin_user()
                     $user_source->email = $request->postData('eemail');
                 }
                 $nickValidation = User_validate_Nick($request->postData('eNick'));
-                if($nickValidation->isValid()) {
+                if ($nickValidation->isValid()) {
                     $user_source->name = $nickValidation->getValue();
                 }
                 $user_source->save();
-                $user_source->personalData->first_name = $request->postData('eVorname');
-                $user_source->personalData->last_name = $request->postData('eName');
+                if (config('enable_user_name')) {
+                    $user_source->personalData->first_name = $request->postData('eVorname');
+                    $user_source->personalData->last_name = $request->postData('eName');
+                }
                 $user_source->personalData->shirt_size = $request->postData('eSize');
                 $user_source->personalData->save();
                 $user_source->contact->mobile = $request->postData('eHandy');
@@ -279,9 +283,11 @@ function admin_user()
                 $user_source->state->save();
 
                 engelsystem_log(
-                    'Updated user: ' . $request->postData('eNick') . ', ' . $request->postData('eSize')
-                    . ', active: ' . $request->postData('eAktiv')
-                    . ', tshirt: ' . $request->postData('eTshirt')
+                    'Updated user: ' . $user_source->name . ' (' . $user_source->id . ')'
+                    . ', t-shirt: ' . $user_source->personalData->shirt_size
+                    . ', active: ' . $user_source->state->active
+                    . ', force-active: ' . $user_source->state->force_active
+                    . ', tshirt: ' . $user_source->state->got_shirt
                 );
                 $html .= success('Änderung wurde gespeichert...' . "\n", true);
                 break;
@@ -291,9 +297,9 @@ function admin_user()
                     $request->postData('new_pw') != ''
                     && $request->postData('new_pw') == $request->postData('new_pw2')
                 ) {
-                    set_password($user_id, $request->postData('new_pw'));
                     $user_source = User::find($user_id);
-                    engelsystem_log('Set new password for ' . User_Nick_render($user_source));
+                    auth()->setPassword($user_source, $request->postData('new_pw'));
+                    engelsystem_log('Set new password for ' . User_Nick_render($user_source, true));
                     $html .= success('Passwort neu gesetzt.', true);
                 } else {
                     $html .= error(

@@ -14,7 +14,6 @@ To report bugs use [engelsystem/issues](https://github.com/engelsystem/engelsyst
  * PHP >= 7.1
    * Required modules:
      * dom
-     * gettext
      * json
      * mbstring
      * PDO
@@ -99,7 +98,7 @@ vendor/bin/phpunit
 
 ### CI & Build Pipeline
 The engelsystem can be tested and automatically deployed to a testing/staging/production environment.
-This functionality requires a [GitLab](https://about.gitlab.com/) server with a running docker minion.
+This functionality requires a [GitLab](https://about.gitlab.com/) server with a working docker runner.
 
 To use the deployment features the following secret variables need to be defined (if undefined the step will be skipped):
 ```bash
@@ -138,6 +137,9 @@ For usage see `./bin/deploy.sh -h`
 The `bin/migrate` script can be used to import and update the database of the engelsystem.
 
 For more information on how to use it call `./bin/migrate help`
+
+### Translation
+We use gettext. You may use POEdit to extract new texts from the sourcecode. Please config POEdit to extract also the twig template files using the following settings: https://gist.github.com/jlambe/a868d9b63d70902a12254ce47069d0e6
 
 ### Codestyle
 Please ensure that your pull requests follow [PSR-2](http://www.php-fig.org/psr/psr-2/) and [PSR-4](http://www.php-fig.org/psr/psr-4/).

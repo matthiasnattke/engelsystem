@@ -2,6 +2,7 @@
 
 use Engelsystem\Models\User\User;
 use Engelsystem\ShiftSignupState;
+use Illuminate\Support\Collection;
 
 /**
  * Renders the basic shift view header.
@@ -80,7 +81,7 @@ function Shift_signup_button_render($shift, $angeltype, $user_angeltype = null)
         $user_angeltype = UserAngelType_by_User_and_AngelType(auth()->user()->id, $angeltype);
     }
 
-    if ($angeltype['shift_signup_state']->isSignupAllowed()) {
+    if (isset($angeltype['shift_signup_state']) && $angeltype['shift_signup_state']->isSignupAllowed()) {
         return button(shift_entry_create_link($shift, $angeltype), __('Sign up'));
     } elseif (empty($user_angeltype)) {
         return button(
@@ -115,8 +116,20 @@ function Shift_view($shift, $shifttype, $room, $angeltypes_source, ShiftSignupSt
     }
 
     $needed_angels = '';
-    foreach ($shift['NeedAngels'] as $needed_angeltype) {
+    $neededAngels = new Collection($shift['NeedAngels']);
+    foreach ($neededAngels as $needed_angeltype) {
         $needed_angels .= Shift_view_render_needed_angeltype($needed_angeltype, $angeltypes, $shift, $user_shift_admin);
+    }
+
+    foreach ($shift['ShiftEntry'] as $shiftEntry) {
+        if (!$neededAngels->where('TID', $shiftEntry['TID'])->first()) {
+            $needed_angels .= Shift_view_render_needed_angeltype([
+                'TID'        => $shiftEntry['TID'],
+                'count'      => 0,
+                'restricted' => true,
+                'taken'      => true,
+            ], $angeltypes, $shift, $user_shift_admin);
+        }
     }
 
     $content = [msg()];
@@ -127,6 +140,13 @@ function Shift_view($shift, $shifttype, $room, $angeltypes_source, ShiftSignupSt
 
     if ($shift_signup_state->getState() == ShiftSignupState::SIGNED_UP) {
         $content[] = info(__('You are signed up for this shift.'), true);
+    }
+
+    if (config('signup_advance_hours') && $shift['start'] > time() + config('signup_advance_hours') * 3600) {
+        $content[] = info(sprintf(
+            __('This shift is in the far future and becomes available for signup at %s.'),
+            date(__('Y-m-d') . ' H:i', $shift['start'] - config('signup_advance_hours') * 3600)
+        ), true);
     }
 
     $buttons = [];
@@ -190,7 +210,7 @@ function Shift_view_render_needed_angeltype($needed_angeltype, $angeltypes, $shi
 
     $needed_angels .= '<h3>' . AngelType_name_render($angeltype) . '</h3>';
     $bar_max = max($needed_angeltype['count'] * 10, $needed_angeltype['taken'] * 10, 10);
-    $bar_value = max(1, $needed_angeltype['taken'] * 10);
+    $bar_value = max($bar_max / 10, $needed_angeltype['taken'] * 10);
     $needed_angels .= progress_bar(
         0,
         $bar_max,
@@ -224,9 +244,10 @@ function Shift_view_render_shift_entry($shift_entry, $user_shift_admin, $angelty
     if ($shift_entry['freeloaded']) {
         $entry = '<del>' . $entry . '</del>';
     }
-    if ($user_shift_admin || $angeltype_supporter) {
+    $isUser = $shift_entry['UID'] == auth()->user()->id;
+    if ($user_shift_admin || $angeltype_supporter || $isUser) {
         $entry .= ' <div class="btn-group">';
-        if ($user_shift_admin) {
+        if ($user_shift_admin || $isUser) {
             $entry .= button_glyph(
                 page_link_to('user_myshifts', ['edit' => $shift_entry['id'], 'id' => $shift_entry['UID']]),
                 'pencil',

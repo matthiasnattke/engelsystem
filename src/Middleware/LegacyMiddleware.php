@@ -3,7 +3,7 @@
 namespace Engelsystem\Middleware;
 
 use Engelsystem\Helpers\Authenticator;
-use Engelsystem\Helpers\Translator;
+use Engelsystem\Helpers\Translation\Translator;
 use Engelsystem\Http\Request;
 use Engelsystem\Http\Response;
 use Psr\Container\ContainerInterface;
@@ -17,10 +17,8 @@ class LegacyMiddleware implements MiddlewareInterface
     protected $free_pages = [
         'admin_event_config',
         'angeltypes',
-        'api',
         'atom',
         'ical',
-        'login',
         'public_dashboard',
         'rooms',
         'shift_entries',
@@ -70,9 +68,6 @@ class LegacyMiddleware implements MiddlewareInterface
             $page = $appRequest->path();
             $page = str_replace('-', '_', $page);
         }
-        if ($page == '/') {
-            $page = $this->auth->user() ? config('home_site') : 'login';
-        }
 
         $title = $content = '';
         if (
@@ -105,10 +100,6 @@ class LegacyMiddleware implements MiddlewareInterface
     {
         $title = ucfirst($page);
         switch ($page) {
-            /** @noinspection PhpMissingBreakStatementInspection */
-            case 'api':
-                error('Api disabled temporarily.');
-                redirect(page_link_to());
             /** @noinspection PhpMissingBreakStatementInspection */
             case 'ical':
                 require_once realpath(__DIR__ . '/../../includes/pages/user_ical.php');
@@ -183,17 +174,9 @@ class LegacyMiddleware implements MiddlewareInterface
                 $title = settings_title();
                 $content = user_settings();
                 return [$title, $content];
-            case 'login':
-                $title = login_title();
-                $content = guest_login();
-                return [$title, $content];
             case 'register':
                 $title = register_title();
                 $content = guest_register();
-                return [$title, $content];
-            case 'logout':
-                $title = logout_title();
-                $content = guest_logout();
                 return [$title, $content];
             case 'admin_questions':
                 $title = admin_questions_title();

@@ -6,7 +6,7 @@ use Engelsystem\Application;
 use Engelsystem\Config\Config;
 use Engelsystem\Container\Container;
 use Engelsystem\Helpers\Authenticator;
-use Engelsystem\Helpers\Translator;
+use Engelsystem\Helpers\Translation\Translator;
 use Engelsystem\Http\Request;
 use Engelsystem\Http\Response;
 use Engelsystem\Http\UrlGeneratorInterface;
@@ -55,7 +55,7 @@ class HelpersTest extends TestCase
     }
 
     /**
-     * @covers \base_path()
+     * @covers \base_path
      */
     public function testBasePath()
     {
@@ -99,7 +99,7 @@ class HelpersTest extends TestCase
     }
 
     /**
-     * @covers \config_path()
+     * @covers \config_path
      */
     public function testConfigPath()
     {
@@ -115,20 +115,6 @@ class HelpersTest extends TestCase
 
         $this->assertEquals('/foo/conf', config_path());
         $this->assertEquals('/foo/conf/bar.php', config_path('bar.php'));
-    }
-
-    /**
-     * @covers \env
-     */
-    public function testEnv()
-    {
-        putenv('envTestVar=someContent');
-
-        $env = env('envTestVar');
-        $this->assertEquals('someContent', $env);
-
-        $env = env('someRandomEnvVarThatShouldNeverExist', 'someDefaultValue');
-        $this->assertEquals('someDefaultValue', $env);
     }
 
     /**

@@ -11,25 +11,9 @@ use Engelsystem\Models\User\User;
 /**
  * @return string
  */
-function login_title()
-{
-    return __('Login');
-}
-
-/**
- * @return string
- */
 function register_title()
 {
     return __('Register');
-}
-
-/**
- * @return string
- */
-function logout_title()
-{
-    return __('Logout');
 }
 
 /**
@@ -42,6 +26,7 @@ function guest_register()
     $authUser = auth()->user();
     $tshirt_sizes = config('tshirt_sizes');
     $enable_tshirt_size = config('enable_tshirt_size');
+    $enable_user_name = config('enable_user_name');
     $enable_dect = config('enable_dect');
     $enable_planned_arrival = config('enable_planned_arrival');
     $min_password_length = config('min_password_length');
@@ -86,10 +71,11 @@ function guest_register()
         if ($request->has('nick')) {
             $nickValidation = User_validate_Nick($request->input('nick'));
             $nick = $nickValidation->getValue();
-            
-            if(!$nickValidation->isValid()) {
+
+            if (!$nickValidation->isValid()) {
                 $valid = false;
-                $msg .= error(sprintf(__('Please enter a valid nick.') . ' ' . __('Use up to 23 letters, numbers, connecting punctuations or spaces for your nickname.'), $nick), true);
+                $msg .= error(sprintf(__('Please enter a valid nick.') . ' ' . __('Use up to 23 letters, numbers, connecting punctuations or spaces for your nickname.'),
+                    $nick), true);
             }
             if (User::whereName($nick)->count() > 0) {
                 $valid = false;
@@ -166,10 +152,10 @@ function guest_register()
         }
 
         // Trivia
-        if ($request->has('lastname')) {
+        if ($enable_user_name && $request->has('lastname')) {
             $lastName = strip_request_item('lastname');
         }
-        if ($request->has('prename')) {
+        if ($enable_user_name && $request->has('prename')) {
             $preName = strip_request_item('prename');
         }
         if ($enable_dect && $request->has('dect')) {
@@ -233,7 +219,7 @@ function guest_register()
 
             // Assign user-group and set password
             DB::insert('INSERT INTO `UserGroups` (`uid`, `group_id`) VALUES (?, -20)', [$user->id]);
-            set_password($user->id, $request->postData('password'));
+            auth()->setPassword($user, $request->postData('password'));
 
             // Assign angel-types
             $user_angel_types_info = [];
@@ -246,7 +232,7 @@ function guest_register()
             }
 
             engelsystem_log(
-                'User ' . User_Nick_render($user)
+                'User ' . User_Nick_render($user, true)
                 . ' signed up as: ' . join(', ', $user_angel_types_info)
             );
             success(__('Angel registration successful!'));
@@ -287,7 +273,8 @@ function guest_register()
                     div('row', [
                         div('col-sm-4', [
                             form_text('nick', __('Nick') . ' ' . entry_required(), $nick),
-                            form_info('', __('Use up to 23 letters, numbers, connecting punctuations or spaces for your nickname.'))
+                            form_info('',
+                                __('Use up to 23 letters, numbers, connecting punctuations or spaces for your nickname.'))
                         ]),
                         div('col-sm-8', [
                             form_email('mail', __('E-Mail') . ' ' . entry_required(), $mail),
@@ -352,14 +339,14 @@ function guest_register()
                             form_text('mobile', __('Mobile'), $mobile)
                         ]),
                     ]),
-                    div('row', [
+                    $enable_user_name ? div('row', [
                         div('col-sm-6', [
                             form_text('prename', __('First name'), $preName)
                         ]),
                         div('col-sm-6', [
                             form_text('lastname', __('Last name'), $lastName)
                         ])
-                    ]),
+                    ]) : '',
                     form_info(entry_required() . ' = ' . __('Entry required!'))
                 ])
             ]),
@@ -374,123 +361,4 @@ function guest_register()
 function entry_required()
 {
     return '<span class="text-info glyphicon glyphicon-warning-sign"></span>';
-}
-
-/**
- * @return bool
- */
-function guest_logout()
-{
-    session()->invalidate();
-    redirect(page_link_to('start'));
-    return true;
-}
-
-/**
- * @return string
- */
-function guest_login()
-{
-    $nick = '';
-    $request = request();
-    $session = session();
-    $valid = true;
-
-    $session->remove('uid');
-
-    if ($request->hasPostData('submit')) {
-        if ($request->has('nick') && !empty($request->input('nick'))) {
-            $nickValidation = User_validate_Nick($request->input('nick'));
-            $nick = $nickValidation->getValue();
-            $login_user = User::whereName($nickValidation->getValue())->first();
-            if ($login_user) {
-                if ($request->has('password')) {
-                    if (!verify_password($request->postData('password'), $login_user->password, $login_user->id)) {
-                        $valid = false;
-                        error(__('Your password is incorrect.  Please try it again.'));
-                    }
-                } else {
-                    $valid = false;
-                    error(__('Please enter a password.'));
-                }
-            } else {
-                $valid = false;
-                error(__('No user was found with that Nickname. Please try again. If you are still having problems, ask a Dispatcher.'));
-            }
-        } else {
-            $valid = false;
-            error(__('Please enter a nickname.'));
-        }
-
-        if ($valid && $login_user) {
-            $session->set('uid', $login_user->id);
-            $session->set('locale', $login_user->settings->language);
-
-            redirect(page_link_to(config('home_site')));
-        }
-    }
-
-    return page([
-        div('col-md-12', [
-            div('row', [
-                EventConfig_countdown_page()
-            ]),
-            div('row', [
-                div('col-sm-6 col-sm-offset-3 col-md-4 col-md-offset-4', [
-                    div('panel panel-primary first', [
-                        div('panel-heading', [
-                            '<span class="icon-icon_angel"></span> ' . __('Login')
-                        ]),
-                        div('panel-body', [
-                            msg(),
-                            form([
-                                form_text_placeholder('nick', __('Nick'), $nick),
-                                form_password_placeholder('password', __('Password')),
-                                form_submit('submit', __('Login')),
-                                !$valid ? buttons([
-                                    button(page_link_to('user_password_recovery'), __('I forgot my password'))
-                                ]) : ''
-                            ])
-                        ]),
-                        div('panel-footer', [
-                            glyph('info-sign') . __('Please note: You have to activate cookies!')
-                        ])
-                    ])
-                ])
-            ]),
-            div('row', [
-                div('col-sm-6 text-center', [
-                    heading(register_title(), 2),
-                    get_register_hint()
-                ]),
-                div('col-sm-6 text-center', [
-                    heading(__('What can I do?'), 2),
-                    '<p>' . __('Please read about the jobs you can do to help us.') . '</p>',
-                    buttons([
-                        button(
-                            page_link_to('angeltypes', ['action' => 'about']),
-                            __('Teams/Job description') . ' &raquo;'
-                        )
-                    ])
-                ])
-            ])
-        ])
-    ]);
-}
-
-/**
- * @return string
- */
-function get_register_hint()
-{
-    if (auth()->can('register') && config('registration_enabled')) {
-        return join('', [
-            '<p>' . __('Please sign up, if you want to help us!') . '</p>',
-            buttons([
-                button(page_link_to('register'), register_title() . ' &raquo;')
-            ])
-        ]);
-    }
-
-    return error(__('Registration is disabled.'), true);
 }

@@ -47,6 +47,7 @@ function users_controller()
 function user_delete_controller()
 {
     $user = auth()->user();
+    $auth = auth();
     $request = request();
 
     if ($request->has('user_id')) {
@@ -68,14 +69,12 @@ function user_delete_controller()
     if ($request->hasPostData('submit')) {
         $valid = true;
 
-        if (
-        !(
+        if (!(
             $request->has('password')
-            && verify_password($request->postData('password'), $user->password, $user->id)
-        )
-        ) {
+            && $auth->verifyPassword($user, $request->postData('password'))
+        )) {
             $valid = false;
-            error(__('Your password is incorrect.  Please try it again.'));
+            error(__('Your password is incorrect. Please try it again.'));
         }
 
         if ($valid) {
@@ -85,7 +84,7 @@ function user_delete_controller()
 
             mail_user_delete($user_source);
             success(__('User deleted.'));
-            engelsystem_log(sprintf('Deleted %s', User_Nick_render($user_source)));
+            engelsystem_log(sprintf('Deleted %s', User_Nick_render($user_source, true)));
 
             redirect(users_link());
         }
@@ -170,7 +169,7 @@ function user_edit_vouchers_controller()
             $user_source->state->save();
 
             success(__('Saved the number of vouchers.'));
-            engelsystem_log(User_Nick_render($user_source) . ': ' . sprintf('Got %s vouchers',
+            engelsystem_log(User_Nick_render($user_source, true) . ': ' . sprintf('Got %s vouchers',
                     $user_source->state->got_voucher));
 
             redirect(user_link($user_source->id));
@@ -278,6 +277,8 @@ function users_list_controller()
             'active',
             'force_active',
             'got_shirt',
+            'planned_arrival_date',
+            'planned_departure_date',
             'last_login_at',
         ])) {
         $order_by = $request->input('OrderBy');
@@ -341,7 +342,7 @@ function user_password_recovery_set_new_controller()
         }
 
         if ($valid) {
-            set_password($passwordReset->user->id, $request->postData('password'));
+            auth()->setPassword($passwordReset->user, $request->postData('password'));
             success(__('Password saved.'));
             $passwordReset->delete();
             redirect(page_link_to('login'));
